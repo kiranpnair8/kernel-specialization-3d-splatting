@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.venv/
+venv/
+.env
+
+# Datasets / large assets
+datasets/
+data/
+
+# Training outputs
+outputs/
+checkpoints/
+renders/
+logs/
+
+# Large model files
+*.pt
+*.pth
+*.ckpt
+*.ply
+*.npz
+
+# System/editor
+.DS_Store
+.vscode/
+.idea/
