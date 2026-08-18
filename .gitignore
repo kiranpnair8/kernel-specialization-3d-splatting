@@ -15,6 +15,7 @@ data/
 
 # Training outputs
 outputs/
+results/
 checkpoints/
 renders/
 logs/
