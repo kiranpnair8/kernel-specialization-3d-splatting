@@ -40,19 +40,47 @@ This repository should contain:
 - silently change method hyperparameters
 - commit datasets or large checkpoints
 - modify external research repositories unless explicitly requested
+- copy upstream method code into this repository unless explicitly requested
+- remove the gitignore policy for external repositories, datasets, outputs,
+  checkpoints, renders, or experiment logs
 
 ## External repositories
 
-External implementations should remain outside this repository as sibling directories.
+External implementations are expected to exist as gitignored directories inside
+the working HPC checkout. They are not tracked by this repository, so Codex will
+not discover them from Git alone.
 
 Expected layout:
 
-~/kernel-specialization-3d-splatting
-~/external/gaussian-splatting
-~/external/ges-splatting
-~/external/drk
+```text
+kernel-specialization-3d-splatting/
+|-- external/
+|   |-- gaussian-splatting/
+|   `-- ges-splatting/
+```
+
+Pinned upstream sources:
+
+- `external/gaussian-splatting`
+  - repository: `https://github.com/graphdeco-inria/gaussian-splatting`
+  - commit: `54c035f7834b564019656c3e3fcc3646292f727d`
+- `external/ges-splatting`
+  - repository: `https://github.com/ajhamdi/ges-splatting`
+  - commit: `c05fc7dbb22e270a5a6f490e7040adac4af02c96`
 
 Each external method may use its own environment.
+
+The directories `external/`, `datasets/`, `outputs/`, `checkpoints/`,
+`renders/`, and experiment logs are intentionally not tracked by Git.
+
+## Validated baselines
+
+- 3DGS Garden, Mip-NeRF 360 `images_4`, 30k iterations:
+  PSNR 27.4781, SSIM 0.8680687, LPIPS 0.1060733, 4,146,866 primitives,
+  approximately 44 minutes.
+- GES Garden, Mip-NeRF 360 `images_4`, 40k iterations:
+  PSNR 27.1016693, SSIM 0.8524919, LPIPS 0.1347301, 2,709,992 primitives,
+  approximately 39.5 minutes.
 
 ## Experimental principles
 
