@@ -5,9 +5,14 @@
 This repository supports Paper 1:
 "Beyond a Universal Kernel Family: Understanding Local Representation Bias in 3D Splatting."
 
+Use `kiranpnair8/kernel-specialization-3d-splatting` on `main` as the canonical
+working repository.
+
 The scientific objective is to test whether different mathematical
 kernel families retain complementary local representation biases even
 after strong within-family adaptation.
+
+High-level project context lives in `docs/project_plan_paper1.md`.
 
 ## Do not assume the hypothesis is true
 
