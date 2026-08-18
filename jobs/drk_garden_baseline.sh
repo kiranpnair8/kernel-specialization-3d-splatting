@@ -144,37 +144,33 @@ echo "Requested output: $OUTPUT"
 echo "Actual output:    $ACTUAL_OUTPUT"
 
 # -----------------------------
-# Rendering
+# Metric evaluation
 # -----------------------------
 
 echo
 echo "============================================================"
-echo "RENDERING"
+echo "METRIC EVALUATION"
 echo "Started: $(date)"
 echo "============================================================"
 
-python render.py \
-    -m "$ACTUAL_OUTPUT" \
-    --skip_train
+# DRK evaluates through train.py --metric. Pass the same base -m path used for
+# training because train.py appends _${gs_type} internally when constructing the
+# actual model directory.
+python train.py \
+    -s "$DATASET" \
+    -m "$OUTPUT" \
+    --eval \
+    --gs_type DRK \
+    --kernel_density dense \
+    --cache_sort \
+    --is_unbounded \
+    --metric \
+    --load_iteration -1
 
 echo
-echo "Rendering completed: $(date)"
+echo "Metric evaluation completed: $(date)"
 
-# -----------------------------
-# Metrics
-# -----------------------------
-
-echo
-echo "============================================================"
-echo "METRICS"
-echo "Started: $(date)"
-echo "============================================================"
-
-python metrics.py \
-    -m "$ACTUAL_OUTPUT"
-
-echo
-echo "Metrics completed: $(date)"
+ACTUAL_OUTPUT=$(resolve_model_path)
 
 # -----------------------------
 # Representation statistics
