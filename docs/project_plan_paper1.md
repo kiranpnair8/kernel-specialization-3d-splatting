@@ -103,3 +103,36 @@ export TORCH_CUDA_ARCH_LIST="7.0"
 
 Individual external method repositories may still require method-specific
 environments when documented by an experiment.
+
+## Gitignored Local Inputs And Outputs
+
+The working HPC checkout is expected to contain gitignored upstream method
+repositories under `external/`:
+
+```text
+kernel-specialization-3d-splatting/
+|-- external/
+|   |-- gaussian-splatting/
+|   `-- ges-splatting/
+```
+
+Pinned upstream sources:
+
+- 3DGS: `https://github.com/graphdeco-inria/gaussian-splatting`
+  at commit `54c035f7834b564019656c3e3fcc3646292f727d`
+- GES: `https://github.com/ajhamdi/ges-splatting`
+  at commit `c05fc7dbb22e270a5a6f490e7040adac4af02c96`
+
+The directories `external/`, `datasets/`, `outputs/`, `checkpoints/`,
+`renders/`, and experiment logs are intentionally not tracked by Git. Do not
+remove that policy or copy upstream implementation code into the main repository
+unless explicitly requested.
+
+## Current Validated Baselines
+
+- 3DGS Garden, Mip-NeRF 360 `images_4`, 30k iterations:
+  PSNR 27.4781, SSIM 0.8680687, LPIPS 0.1060733, 4,146,866 primitives,
+  approximately 44 minutes.
+- GES Garden, Mip-NeRF 360 `images_4`, 40k iterations:
+  PSNR 27.1016693, SSIM 0.8524919, LPIPS 0.1347301, 2,709,992 primitives,
+  approximately 39.5 minutes.
