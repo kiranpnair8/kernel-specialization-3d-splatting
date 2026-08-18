@@ -21,3 +21,14 @@ The default config expects:
 
 These paths are gitignored and should be adjusted in the config if the actual
 HPC render folder names differ.
+
+Run the Stage-0 pipeline-validation sensitivity grid:
+
+```bash
+python scripts/evaluate/sensitivity.py --config configs/garden_3dgs_vs_ges.json
+```
+
+By default this evaluates patch sizes `32,64,128` and tie thresholds
+`0,1e-5,5e-5`, writing per-run outputs plus aggregate
+`sensitivity_summary.csv` and `sensitivity_summary.json` under the configured
+results directory.

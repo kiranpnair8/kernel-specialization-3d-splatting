@@ -5,7 +5,7 @@ import csv
 import json
 from pathlib import Path
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -62,10 +62,10 @@ def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) 
         writer.writerows(rows)
 
 
-def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = False) -> None:
+def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = False) -> Optional[Dict[str, object]]:
     views = inspect(config_path, config)
     if inspect_only:
-        return
+        return None
 
     scene = str(config["scene"])
     patch_size = int(config.get("patch_size", 64))
@@ -215,6 +215,7 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
         json.dump(summary, handle, indent=2, sort_keys=True)
 
     print(f"wrote: {results_dir}")
+    return summary
 
 
 def main() -> None:
