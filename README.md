@@ -3,6 +3,9 @@
 Research code for a hypothesis-driven characterization study of
 cross-family kernel specialization in 3D scene representation.
 
+Canonical working repository: `kiranpnair8/kernel-specialization-3d-splatting`
+on `main`.
+
 ## Central question
 
 Is one locally adaptive kernel family sufficient for heterogeneous
@@ -21,3 +24,6 @@ Paper 1 focuses on:
 - statistical characterization
 
 Paper 1 does NOT implement MoKES or a heterogeneous routing architecture.
+
+See [docs/project_plan_paper1.md](docs/project_plan_paper1.md) for the
+high-level project framing and go/no-go checkpoints.
