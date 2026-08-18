@@ -31,3 +31,9 @@ logs/
 .vscode/
 .idea/
 external/
+
+# Slurm / experiment logs
+jobs/logs/
+*.out
+*.err
+*.log
