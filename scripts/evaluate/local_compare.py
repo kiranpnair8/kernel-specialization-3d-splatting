@@ -77,7 +77,14 @@ def interpretation_note(config: Dict[str, object]) -> str:
     )
 
 
-def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = False) -> Optional[Dict[str, object]]:
+def analyze(
+    config_path: Path,
+    config: Dict[str, object],
+    inspect_only: bool = False,
+    generate_maps: bool = True,
+    write_outputs: bool = True,
+    run_predictors: bool = True,
+) -> Optional[Dict[str, object]]:
     views = inspect(config_path, config)
     if inspect_only:
         return None
@@ -101,14 +108,16 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
         ensure_same_shape([gt, *renders.values()], view_paths.view)
 
         image_row: Dict[str, object] = {"scene": scene, "view": view_paths.view}
-        for name, render in renders.items():
-            metrics = image_metrics(gt, render)
-            for key, value in metrics.items():
-                image_row[f"{name}_{key}"] = value
+        if write_outputs:
+            for name, render in renders.items():
+                metrics = image_metrics(gt, render)
+                for key, value in metrics.items():
+                    image_row[f"{name}_{key}"] = value
 
-            error_map = abs_rgb_error(gt, render).mean(axis=-1)
-            save_float_map(results_dir / "maps" / name / f"{Path(view_paths.view).stem}_error.png", error_map)
-        image_rows.append(image_row)
+                if generate_maps:
+                    error_map = abs_rgb_error(gt, render).mean(axis=-1)
+                    save_float_map(results_dir / "maps" / name / f"{Path(view_paths.view).stem}_error.png", error_map)
+            image_rows.append(image_row)
 
         height, width = gt.shape[:2]
         patches = list(iter_patches(height, width, patch_size, stride))
@@ -116,7 +125,7 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
 
         for patch_index, patch in enumerate(patches):
             gt_patch = crop(gt, patch)
-            features = patch_descriptors(gt_patch)
+            features = patch_descriptors(gt_patch) if write_outputs or run_predictors else {}
             method_mse = {}
             method_psnr = {}
             method_ssim = {}
@@ -124,8 +133,9 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
                 render_patch = crop(render, patch)
                 value = mse(gt_patch, render_patch)
                 method_mse[name] = value
-                method_psnr[name] = psnr_from_mse(value)
-                method_ssim[name] = ssim_simple(gt_patch, render_patch)
+                if write_outputs:
+                    method_psnr[name] = psnr_from_mse(value)
+                    method_ssim[name] = ssim_simple(gt_patch, render_patch)
 
             sorted_methods = sorted(method_mse, key=method_mse.get)
             best = sorted_methods[0]
@@ -148,37 +158,39 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
             }
             row.update(features)
             for name in methods:
-                row[f"{name}_mae"] = float(abs_rgb_error(gt_patch, crop(renders[name], patch)).mean())
                 row[f"{name}_mse"] = method_mse[name]
-                row[f"{name}_psnr"] = method_psnr[name]
-                row[f"{name}_ssim_simple"] = method_ssim[name]
+                if write_outputs:
+                    row[f"{name}_mae"] = float(abs_rgb_error(gt_patch, crop(renders[name], patch)).mean())
+                    row[f"{name}_psnr"] = method_psnr[name]
+                    row[f"{name}_ssim_simple"] = method_ssim[name]
             view_rows.append(row)
 
         all_rows.extend(view_rows)
 
-        for name in methods:
-            values = [float(row[f"{name}_mse"]) for row in view_rows]
-            patch_map = rasterize_patch_values((height, width), patches, values)
-            save_float_map(results_dir / "maps" / name / f"{Path(view_paths.view).stem}_patch_mse.png", patch_map)
+        if generate_maps:
+            for name in methods:
+                values = [float(row[f"{name}_mse"]) for row in view_rows]
+                patch_map = rasterize_patch_values((height, width), patches, values)
+                save_float_map(results_dir / "maps" / name / f"{Path(view_paths.view).stem}_patch_mse.png", patch_map)
 
-        for left, right in combinations(methods, 2):
-            diff_values = [float(row[f"{right}_mse"]) - float(row[f"{left}_mse"]) for row in view_rows]
-            diff_map = rasterize_patch_values((height, width), patches, diff_values)
-            save_float_map(
-                results_dir / "maps" / "difference" / f"{left}_vs_{right}" / f"{Path(view_paths.view).stem}_signed_mse.png",
-                diff_map,
-                signed=True,
+            for left, right in combinations(methods, 2):
+                diff_values = [float(row[f"{right}_mse"]) - float(row[f"{left}_mse"]) for row in view_rows]
+                diff_map = rasterize_patch_values((height, width), patches, diff_values)
+                save_float_map(
+                    results_dir / "maps" / "difference" / f"{left}_vs_{right}" / f"{Path(view_paths.view).stem}_signed_mse.png",
+                    diff_map,
+                    signed=True,
+                )
+
+            margin_map = rasterize_patch_values((height, width), patches, [float(row["error_margin"]) for row in view_rows])
+            save_float_map(results_dir / "maps" / "margin" / f"{Path(view_paths.view).stem}_margin.png", margin_map)
+            save_winner_map(
+                results_dir / "maps" / "winner" / f"{Path(view_paths.view).stem}_winner.png",
+                (height, width),
+                patches,
+                [str(row["winner"]) for row in view_rows],
+                colors,
             )
-
-        margin_map = rasterize_patch_values((height, width), patches, [float(row["error_margin"]) for row in view_rows])
-        save_float_map(results_dir / "maps" / "margin" / f"{Path(view_paths.view).stem}_margin.png", margin_map)
-        save_winner_map(
-            results_dir / "maps" / "winner" / f"{Path(view_paths.view).stem}_winner.png",
-            (height, width),
-            patches,
-            [str(row["winner"]) for row in view_rows],
-            colors,
-        )
 
     feature_columns = [
         "mean_gradient_magnitude",
@@ -206,8 +218,9 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
         "second_method",
         "error_margin",
     ]
-    write_csv(results_dir / "patches.csv", all_rows, patch_fields)
-    write_csv(results_dir / "per_image_metrics.csv", image_rows, list(image_rows[0].keys()))
+    if write_outputs:
+        write_csv(results_dir / "patches.csv", all_rows, patch_fields)
+        write_csv(results_dir / "per_image_metrics.csv", image_rows, list(image_rows[0].keys()))
 
     summary = {
         "config": {
@@ -218,7 +231,7 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
             "methods": methods,
         },
         "oracle": oracle_summary(all_rows, methods),
-        "predictors": evaluate_predictors(all_rows, methods),
+        "predictors": evaluate_predictors(all_rows, methods) if run_predictors else {"status": "skipped", "reason": "disabled"},
         "notes": {
             "lpips_patch_scale": (
                 "Not computed. Naive patch LPIPS is not used because LPIPS is calibrated as an image-level "
@@ -227,10 +240,12 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
             "interpretation": interpretation_note(config),
         },
     }
-    with (results_dir / "summary.json").open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, indent=2, sort_keys=True)
+    if write_outputs:
+        with (results_dir / "summary.json").open("w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2, sort_keys=True)
 
-    print(f"wrote: {results_dir}")
+    if write_outputs:
+        print(f"wrote: {results_dir}")
     return summary
 
 

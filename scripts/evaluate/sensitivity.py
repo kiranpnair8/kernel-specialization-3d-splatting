@@ -98,10 +98,30 @@ def _write_csv(path: Path, rows: Iterable[Dict[str, object]]) -> None:
         for key in row:
             if key not in fieldnames:
                 fieldnames.append(key)
-    with path.open("w", newline="", encoding="utf-8") as handle:
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with temp_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+    temp_path.replace(path)
+
+
+def _write_aggregate_outputs(sensitivity_dir: Path, rows: List[Dict[str, object]], summaries: List[Dict[str, object]], policy: str) -> None:
+    _write_csv(sensitivity_dir / "sensitivity_summary.csv", rows)
+    json_path = sensitivity_dir / "sensitivity_summary.json"
+    temp_json_path = json_path.with_suffix(json_path.suffix + ".tmp")
+    with temp_json_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "stride_policy": policy,
+                "runs": summaries,
+                "summary_rows": rows,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+    temp_json_path.replace(json_path)
 
 
 def run_sensitivity(
@@ -118,49 +138,45 @@ def run_sensitivity(
     sensitivity_dir = output_dir or (base_results_dir / "sensitivity")
     rows: List[Dict[str, object]] = []
     summaries: List[Dict[str, object]] = []
+    total_conditions = len(patch_sizes) * len(tie_thresholds)
 
-    for patch_size in patch_sizes:
-        for tie_threshold in tie_thresholds:
-            stride = _stride_for_patch_size(patch_size, base_stride, policy)
-            config = deepcopy(base_config)
-            config["patch_size"] = patch_size
-            config["stride"] = stride
-            config["tie_threshold_mse"] = tie_threshold
-            config["results_dir"] = str(
-                sensitivity_dir / "runs" / f"patch_{patch_size}_stride_{stride}" / f"tie_{_tie_label(tie_threshold)}"
-            )
-            print(
-                "running sensitivity: "
-                f"patch_size={patch_size}, stride={stride}, "
-                f"tie_threshold_mse={tie_threshold}, stride_policy={policy}"
-            )
-            summary = analyze(config_path, config, inspect_only=False)
-            if summary is None:
-                raise RuntimeError("Sensitivity run unexpectedly returned no summary")
-            rows.append(_flatten_summary(patch_size, stride, tie_threshold, summary))
-            summaries.append(
-                {
-                    "patch_size": patch_size,
-                    "stride": stride,
-                    "tie_threshold_mse": tie_threshold,
-                    "stride_policy": policy,
-                    "results_dir": config["results_dir"],
-                    "summary": summary,
-                }
-            )
-
-    _write_csv(sensitivity_dir / "sensitivity_summary.csv", rows)
-    with (sensitivity_dir / "sensitivity_summary.json").open("w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "stride_policy": policy,
-                "runs": summaries,
-                "summary_rows": rows,
-            },
-            handle,
-            indent=2,
-            sort_keys=True,
+    for condition_index, (patch_size, tie_threshold) in enumerate(
+        ((patch_size, tie_threshold) for patch_size in patch_sizes for tie_threshold in tie_thresholds),
+        start=1,
+    ):
+        stride = _stride_for_patch_size(patch_size, base_stride, policy)
+        config = deepcopy(base_config)
+        config["patch_size"] = patch_size
+        config["stride"] = stride
+        config["tie_threshold_mse"] = tie_threshold
+        print(
+            f"running sensitivity condition {condition_index}/{total_conditions}: "
+            f"patch_size={patch_size}, stride={stride}, "
+            f"tie_threshold_mse={tie_threshold}, stride_policy={policy}"
         )
+        summary = analyze(
+            config_path,
+            config,
+            inspect_only=False,
+            generate_maps=False,
+            write_outputs=False,
+            run_predictors=False,
+        )
+        if summary is None:
+            raise RuntimeError("Sensitivity run unexpectedly returned no summary")
+        rows.append(_flatten_summary(patch_size, stride, tie_threshold, summary))
+        summaries.append(
+            {
+                "patch_size": patch_size,
+                "stride": stride,
+                "tie_threshold_mse": tie_threshold,
+                "stride_policy": policy,
+                "summary": summary,
+            }
+        )
+        _write_aggregate_outputs(sensitivity_dir, rows, summaries, policy)
+        print(f"completed sensitivity condition {condition_index}/{total_conditions}")
+
     print(f"wrote: {sensitivity_dir}")
 
 

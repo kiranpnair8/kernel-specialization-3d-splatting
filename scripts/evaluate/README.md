@@ -59,4 +59,7 @@ python scripts/evaluate/sensitivity.py --config configs/garden_3dgs_ges_drk.json
 
 The three-family config sets `sensitivity_stride_policy` to `half_patch`, so
 the predefined grid uses 50% overlap: patch size `32` uses stride `16`, patch
-size `64` uses stride `32`, and patch size `128` uses stride `64`.
+size `64` uses stride `32`, and patch size `128` uses stride `64`. Sensitivity
+runs are metrics-only: they skip visualization maps, per-run patch CSVs, and
+predictor fitting, and write only aggregate `sensitivity_summary.csv` and
+`sensitivity_summary.json`.
