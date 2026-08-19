@@ -67,6 +67,16 @@ def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: List[str]) 
         writer.writerows(rows)
 
 
+def interpretation_note(config: Dict[str, object]) -> str:
+    note = config.get("interpretation_note")
+    if note:
+        return str(note)
+    return (
+        "Pipeline validation only. Do not interpret 3DGS-vs-GES winners as evidence of "
+        "cross-family specialization; Gaussian is nested inside GES."
+    )
+
+
 def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = False) -> Optional[Dict[str, object]]:
     views = inspect(config_path, config)
     if inspect_only:
@@ -214,10 +224,7 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
                 "Not computed. Naive patch LPIPS is not used because LPIPS is calibrated as an image-level "
                 "perceptual metric and small patches require a separate resize/context protocol."
             ),
-            "interpretation": (
-                "Pipeline validation only. Do not interpret 3DGS-vs-GES winners as evidence of "
-                "cross-family specialization; Gaussian is nested inside GES."
-            ),
+            "interpretation": interpretation_note(config),
         },
     }
     with (results_dir / "summary.json").open("w", encoding="utf-8") as handle:
