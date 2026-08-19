@@ -63,3 +63,18 @@ size `64` uses stride `32`, and patch size `128` uses stride `64`. Sensitivity
 runs are metrics-only: they skip visualization maps, per-run patch CSVs, and
 predictor fitting, and write only aggregate `sensitivity_summary.csv` and
 `sensitivity_summary.json`.
+
+Run the Stage-1 three-family structure characterization after generating a
+full patch-level `patches.csv` for patch size `32`, stride `16`, and tie
+threshold `1e-5`:
+
+```bash
+python scripts/evaluate/characterize_specialization.py \
+  --config configs/garden_3dgs_ges_drk.json
+```
+
+This is a post-hoc observational analysis of the existing patch rows. It writes
+descriptor summaries, pairwise nonparametric tests with FDR correction,
+winner-probability quantile curves, a descriptor-correlation matrix, and
+decisive patch exemplars under
+`results/garden/3dgs_vs_ges_vs_drk/characterization/`.
