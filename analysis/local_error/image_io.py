@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 from PIL import Image
@@ -15,6 +15,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 class MethodSpec:
     name: str
     render_dir: Path
+    render_name_template: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,22 @@ def list_images(directory: Path) -> Dict[str, Path]:
 
 def pair_views(gt_dir: Path, methods: Sequence[MethodSpec]) -> List[ViewPaths]:
     gt_images = list_images(gt_dir)
-    method_images = {method.name: list_images(method.render_dir) for method in methods}
+    method_images = {}
+    for method in methods:
+        images = list_images(method.render_dir)
+        if method.render_name_template:
+            mapped_images = {}
+            for gt_name in gt_images:
+                rendered_name = method.render_name_template.format(
+                    name=gt_name,
+                    stem=Path(gt_name).stem,
+                    suffix=Path(gt_name).suffix,
+                )
+                if rendered_name in images:
+                    mapped_images[gt_name] = images[rendered_name]
+            method_images[method.name] = mapped_images
+        else:
+            method_images[method.name] = images
 
     common = set(gt_images)
     for images in method_images.values():
@@ -58,7 +74,7 @@ def pair_views(gt_dir: Path, methods: Sequence[MethodSpec]) -> List[ViewPaths]:
         extra_render = sorted(set(images) - set(gt_images))
         if missing_gt:
             missing_messages.append(f"{name} missing {len(missing_gt)} GT filenames; first={missing_gt[:3]}")
-        if extra_render:
+        if extra_render and not any(method.name == name and method.render_name_template for method in methods):
             missing_messages.append(f"{name} has {len(extra_render)} extra render filenames; first={extra_render[:3]}")
 
     if missing_messages:

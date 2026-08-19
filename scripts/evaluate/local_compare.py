@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from itertools import combinations
 import json
 from pathlib import Path
 import sys
@@ -36,7 +37,11 @@ def resolve_path(config_path: Path, value: str) -> Path:
 def inspect(config_path: Path, config: Dict[str, object]) -> List[object]:
     gt_dir = resolve_path(config_path, str(config["gt_dir"]))
     methods = [
-        MethodSpec(name=str(item["name"]), render_dir=resolve_path(config_path, str(item["render_dir"])))
+        MethodSpec(
+            name=str(item["name"]),
+            render_dir=resolve_path(config_path, str(item["render_dir"])),
+            render_name_template=item.get("render_name_template"),
+        )
         for item in config["methods"]
     ]
     print(f"scene: {config['scene']}")
@@ -146,10 +151,14 @@ def analyze(config_path: Path, config: Dict[str, object], inspect_only: bool = F
             patch_map = rasterize_patch_values((height, width), patches, values)
             save_float_map(results_dir / "maps" / name / f"{Path(view_paths.view).stem}_patch_mse.png", patch_map)
 
-        if len(methods) == 2:
-            diff_values = [float(row[f"{methods[1]}_mse"]) - float(row[f"{methods[0]}_mse"]) for row in view_rows]
+        for left, right in combinations(methods, 2):
+            diff_values = [float(row[f"{right}_mse"]) - float(row[f"{left}_mse"]) for row in view_rows]
             diff_map = rasterize_patch_values((height, width), patches, diff_values)
-            save_float_map(results_dir / "maps" / "difference" / f"{Path(view_paths.view).stem}_signed_mse.png", diff_map, signed=True)
+            save_float_map(
+                results_dir / "maps" / "difference" / f"{left}_vs_{right}" / f"{Path(view_paths.view).stem}_signed_mse.png",
+                diff_map,
+                signed=True,
+            )
 
         margin_map = rasterize_patch_values((height, width), patches, [float(row["error_margin"]) for row in view_rows])
         save_float_map(results_dir / "maps" / "margin" / f"{Path(view_paths.view).stem}_margin.png", margin_map)

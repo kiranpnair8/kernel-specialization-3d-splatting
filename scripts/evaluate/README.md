@@ -32,3 +32,19 @@ By default this evaluates patch sizes `32,64,128` and tie thresholds
 `0,1e-5,5e-5`, writing per-run outputs plus aggregate
 `sensitivity_summary.csv` and `sensitivity_summary.json` under the configured
 results directory.
+
+Before running the three-family Garden comparison, audit DRK GT alignment:
+
+```bash
+python scripts/evaluate/audit_alignment.py \
+  --reference-gt-dir outputs/3dgs/garden_baseline/test/ours_30000/gt \
+  --candidate-gt-dir outputs/drk/garden_baseline_DRK/metric/test \
+  --candidate-name-template 'gt_{stem}.png'
+```
+
+If the audit reports `exact_or_unambiguous: true`, run the three-family
+comparison:
+
+```bash
+python scripts/evaluate/local_compare.py --config configs/garden_3dgs_ges_drk.json
+```
