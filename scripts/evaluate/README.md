@@ -76,6 +76,20 @@ python scripts/evaluate/characterize_specialization.py \
   --config configs/garden_3dgs_ges_drk_p32.json
 ```
 
+The p32 config enables lightweight patch-export mode by setting
+`generate_maps: false` and `run_predictors: false`. Equivalently, any
+comparison run can disable those expensive extras from the command line:
+
+```bash
+python scripts/evaluate/local_compare.py \
+  --config configs/garden_3dgs_ges_drk_p32.json \
+  --no-maps \
+  --no-predictors
+```
+
+This still writes `patches.csv`, `per_image_metrics.csv`, and `summary.json`,
+but skips PNG map generation and predictor fitting.
+
 This is a post-hoc observational analysis of the existing patch rows. It writes
 descriptor summaries, pairwise nonparametric tests with FDR correction,
 winner-probability quantile curves, a descriptor-correlation matrix, and

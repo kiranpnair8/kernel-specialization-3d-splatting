@@ -77,6 +77,19 @@ def interpretation_note(config: Dict[str, object]) -> str:
     )
 
 
+def config_bool(config: Dict[str, object], key: str, default: bool) -> bool:
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{key} must be a boolean")
+
+
 def analyze(
     config_path: Path,
     config: Dict[str, object],
@@ -253,10 +266,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Local patch comparison for rendered splatting outputs.")
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--inspect-only", action="store_true")
+    parser.add_argument(
+        "--no-maps",
+        action="store_true",
+        help="Skip PNG error, difference, winner, and margin maps while still writing numerical CSV/JSON outputs.",
+    )
+    parser.add_argument(
+        "--no-predictors",
+        action="store_true",
+        help="Skip logistic-regression/random-forest predictor diagnostics while preserving patch metrics and summary output.",
+    )
     args = parser.parse_args()
     config = load_config(args.config)
+    generate_maps = config_bool(config, "generate_maps", True) and not args.no_maps
+    run_predictors = config_bool(config, "run_predictors", True) and not args.no_predictors
     try:
-        analyze(args.config.resolve(), config, inspect_only=args.inspect_only)
+        analyze(
+            args.config.resolve(),
+            config,
+            inspect_only=args.inspect_only,
+            generate_maps=generate_maps,
+            run_predictors=run_predictors,
+        )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
