@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from analysis.local_error.image_io import MethodSpec, load_rgb, pair_views, save_rgb
-from analysis.local_error.patches import Patch, crop
+from analysis.local_error.patches import Patch, crop, iter_patches
 from scripts.evaluate.local_compare import load_config, resolve_path
 
 
@@ -134,21 +134,78 @@ def descriptor_values(rows: Sequence[Mapping[str, object]], descriptor: str) -> 
     return np.asarray([float(row[descriptor]) for row in rows], dtype=np.float64)
 
 
-def validate_patch_setting(rows: Sequence[Mapping[str, object]], patch_size: int, stride: int) -> Dict[str, object]:
+def _patch_tuple(row: Mapping[str, object]) -> Tuple[int, int, int, int]:
+    return (
+        int(float(row["x"])),
+        int(float(row["y"])),
+        int(float(row["width"])),
+        int(float(row["height"])),
+    )
+
+
+def validate_patch_setting(
+    rows: Sequence[Mapping[str, object]],
+    patch_size: int,
+    stride: int,
+    config_path: Optional[Path] = None,
+    config: Optional[Mapping[str, object]] = None,
+) -> Dict[str, object]:
     widths = sorted({int(float(row["width"])) for row in rows})
     heights = sorted({int(float(row["height"])) for row in rows})
-    x_mods = sorted({int(float(row["x"])) % stride for row in rows}) if stride > 0 else []
-    y_mods = sorted({int(float(row["y"])) % stride for row in rows}) if stride > 0 else []
-    return {
+    validation: Dict[str, object] = {
         "expected_patch_size": patch_size,
         "expected_stride": stride,
         "observed_widths": widths,
         "observed_heights": heights,
-        "x_mod_stride_values": x_mods,
-        "y_mod_stride_values": y_mods,
         "patch_size_matches": widths == [patch_size] and heights == [patch_size],
-        "stride_grid_matches": x_mods == [0] and y_mods == [0],
+        "coordinate_grid_matches": None,
+        "views_checked": 0,
+        "view_mismatches": [],
     }
+    if config_path is None or config is None:
+        return validation
+
+    gt_dir = resolve_path(config_path, str(config["gt_dir"]))
+    rows_by_view: Dict[str, List[Mapping[str, object]]] = {}
+    for row in rows:
+        rows_by_view.setdefault(str(row["view"]), []).append(row)
+
+    mismatches = []
+    for view, view_rows in sorted(rows_by_view.items()):
+        gt_path = gt_dir / view
+        if not gt_path.exists():
+            mismatches.append({"view": view, "error": f"GT image not found: {gt_path}"})
+            continue
+        with Image.open(gt_path) as image:
+            width, height = image.size
+        expected = {
+            (patch.x, patch.y, patch.width, patch.height)
+            for patch in iter_patches(height, width, patch_size, stride)
+        }
+        observed = {_patch_tuple(row) for row in view_rows}
+        missing = sorted(expected - observed)
+        unexpected = sorted(observed - expected)
+        if missing or unexpected or len(observed) != len(view_rows):
+            mismatches.append(
+                {
+                    "view": view,
+                    "image_width": width,
+                    "image_height": height,
+                    "expected_patch_count": len(expected),
+                    "observed_patch_count": len(view_rows),
+                    "unique_observed_patch_count": len(observed),
+                    "missing_count": len(missing),
+                    "unexpected_count": len(unexpected),
+                    "first_missing": missing[:5],
+                    "first_unexpected": unexpected[:5],
+                }
+            )
+
+    validation["views_checked"] = len(rows_by_view)
+    validation["coordinate_grid_matches"] = not mismatches
+    validation["view_mismatches"] = mismatches[:10]
+    validation["view_mismatch_count"] = len(mismatches)
+    return validation
 
 
 def grouped_by_winner(rows: Sequence[Mapping[str, object]], labels: Sequence[str]) -> Dict[str, List[Mapping[str, object]]]:
@@ -463,8 +520,8 @@ def characterize(
         if f"{method}_mse" not in rows[0]:
             raise ValueError(f"Patch CSV is missing method error column: {method}_mse")
 
-    validation = validate_patch_setting(rows, patch_size, stride)
-    if not validation["patch_size_matches"] or not validation["stride_grid_matches"]:
+    validation = validate_patch_setting(rows, patch_size, stride, config_path, config)
+    if not validation["patch_size_matches"] or not validation["coordinate_grid_matches"]:
         raise ValueError(f"Patch grid differs from requested setting: {validation}")
 
     summary_rows, descriptor_summary = summarize_descriptors(rows, methods)
