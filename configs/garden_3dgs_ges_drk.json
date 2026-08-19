@@ -18,6 +18,7 @@
   ],
   "patch_size": 64,
   "stride": 32,
+  "sensitivity_stride_policy": "half_patch",
   "tie_threshold_mse": 0.00001,
   "results_dir": "../results/garden/3dgs_vs_ges_vs_drk",
   "interpretation_note": "This experiment measures spatial error complementarity across independently trained splatting systems. It must not be interpreted as a controlled causal kernel-family comparison because training recipes, representation capacities/primitive counts, and implementations differ."

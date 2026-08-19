@@ -31,7 +31,9 @@ python scripts/evaluate/sensitivity.py --config configs/garden_3dgs_vs_ges.json
 By default this evaluates patch sizes `32,64,128` and tie thresholds
 `0,1e-5,5e-5`, writing per-run outputs plus aggregate
 `sensitivity_summary.csv` and `sensitivity_summary.json` under the configured
-results directory.
+results directory. Unless a config or CLI option specifies otherwise,
+the sensitivity runner preserves the base config stride for backward-compatible
+Stage-0 runs.
 
 Before running the three-family Garden comparison, audit DRK GT alignment:
 
@@ -48,3 +50,13 @@ comparison:
 ```bash
 python scripts/evaluate/local_compare.py --config configs/garden_3dgs_ges_drk.json
 ```
+
+Run the Stage-1 three-family sensitivity grid:
+
+```bash
+python scripts/evaluate/sensitivity.py --config configs/garden_3dgs_ges_drk.json
+```
+
+The three-family config sets `sensitivity_stride_policy` to `half_patch`, so
+the predefined grid uses 50% overlap: patch size `32` uses stride `16`, patch
+size `64` uses stride `32`, and patch size `128` uses stride `64`.
