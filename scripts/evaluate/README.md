@@ -69,12 +69,17 @@ full patch-level `patches.csv` for patch size `32`, stride `16`, and tie
 threshold `1e-5`:
 
 ```bash
+python scripts/evaluate/local_compare.py \
+  --config configs/garden_3dgs_ges_drk_p32.json
+
 python scripts/evaluate/characterize_specialization.py \
-  --config configs/garden_3dgs_ges_drk.json
+  --config configs/garden_3dgs_ges_drk_p32.json
 ```
 
 This is a post-hoc observational analysis of the existing patch rows. It writes
 descriptor summaries, pairwise nonparametric tests with FDR correction,
 winner-probability quantile curves, a descriptor-correlation matrix, and
 decisive patch exemplars under
-`results/garden/3dgs_vs_ges_vs_drk/characterization/`.
+`results/garden/3dgs_vs_ges_vs_drk_p32/characterization/`. The characterization
+script exits non-zero if the supplied `patches.csv` geometry does not match the
+requested patch size and stride.

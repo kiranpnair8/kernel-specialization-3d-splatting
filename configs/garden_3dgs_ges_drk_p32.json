@@ -1,0 +1,24 @@
+{
+  "scene": "garden",
+  "gt_dir": "../outputs/3dgs/garden_baseline/test/ours_30000/gt",
+  "methods": [
+    {
+      "name": "3dgs",
+      "render_dir": "../outputs/3dgs/garden_baseline/test/ours_30000/renders"
+    },
+    {
+      "name": "ges",
+      "render_dir": "../outputs/ges/garden_baseline_00_2026-08-17--17-16-41/test/ours_40000/renders"
+    },
+    {
+      "name": "drk",
+      "render_dir": "../outputs/drk/garden_baseline_DRK/metric/test",
+      "render_name_template": "render_{stem}.png"
+    }
+  ],
+  "patch_size": 32,
+  "stride": 16,
+  "tie_threshold_mse": 0.00001,
+  "results_dir": "../results/garden/3dgs_vs_ges_vs_drk_p32",
+  "interpretation_note": "This experiment measures spatial error complementarity across independently trained splatting systems. It must not be interpreted as a controlled causal kernel-family comparison because training recipes, representation capacities/primitive counts, and implementations differ."
+}

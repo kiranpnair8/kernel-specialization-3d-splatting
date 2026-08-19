@@ -464,6 +464,9 @@ def characterize(
             raise ValueError(f"Patch CSV is missing method error column: {method}_mse")
 
     validation = validate_patch_setting(rows, patch_size, stride)
+    if not validation["patch_size_matches"] or not validation["stride_grid_matches"]:
+        raise ValueError(f"Patch grid differs from requested setting: {validation}")
+
     summary_rows, descriptor_summary = summarize_descriptors(rows, methods)
     effect_rows, effect_summary = pairwise_effects(rows, methods)
     probability_rows, probability_summary = quantile_probability_rows(rows, methods, quantile_bins)
@@ -551,9 +554,6 @@ def main() -> None:
         raise SystemExit(2) from exc
 
     print(f"wrote: {summary['output_dir']}")
-    validation = summary["validation"]
-    if not validation["patch_size_matches"] or not validation["stride_grid_matches"]:
-        print(f"warning: patch grid differs from requested setting: {validation}", file=sys.stderr)
 
 
 if __name__ == "__main__":
