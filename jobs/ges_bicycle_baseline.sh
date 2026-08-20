@@ -38,6 +38,12 @@ export TORCH_CUDA_ARCH_LIST="7.0"
 
 export WANDB_MODE=offline
 export WANDB_SILENT=true
+LOCAL_SCRATCH=${SLURM_TMPDIR:-/tmp}/ges_bicycle_${SLURM_JOB_ID:-$$}
+export WANDB_DIR=$LOCAL_SCRATCH/wandb
+export WANDB_CACHE_DIR=$LOCAL_SCRATCH/wandb_cache
+export WANDB_CONFIG_DIR=$LOCAL_SCRATCH/wandb_config
+
+mkdir -p "$WANDB_DIR" "$WANDB_CACHE_DIR" "$WANDB_CONFIG_DIR"
 
 # -----------------------------
 # Helpers
@@ -94,6 +100,7 @@ echo "Started:  $(date)"
 echo "Dataset:  $DATASET"
 echo "Output:   $OUTPUT"
 echo "GES root: $GES_ROOT"
+echo "W&B dir:  $WANDB_DIR"
 echo
 
 nvidia-smi
