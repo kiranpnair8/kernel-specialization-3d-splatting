@@ -87,27 +87,35 @@ Bicycle global observation: 3DGS has the best PSNR and LPIPS; DRK has the best S
 - 3DGS output: `outputs/3dgs/bicycle_baseline`
 - GES output: `outputs/ges/bicycle_baseline_00_2026-08-20--16-01-04`
 - DRK output: `outputs/drk/bicycle_baseline_DRK`
+- p32 analysis config: `configs/bicycle_3dgs_ges_drk_p32.json`
+- Analysis result root: `results/bicycle/3dgs_vs_ges_vs_drk_p32/`
 - Baseline jobs: `jobs/3dgs_bicycle_baseline.sh`, `jobs/ges_bicycle_baseline.sh`, `jobs/drk_bicycle_baseline.sh`
+- Analysis jobs: `jobs/bicycle_p32_characterization.sh`, `jobs/bicycle_sensitivity.sh`
 
 ### Pending Analyses
 
-- GT alignment audit: pending.
-- p32 local comparison: pending.
-- Descriptor-based characterization: pending.
-- Sensitivity analysis: pending.
+- GT alignment audit: pending; configured through `scripts/evaluate/audit_alignment.py` and re-run at the start of Bicycle analysis jobs.
+- p32 local comparison: pending; configured with `patch=32`, `stride=16`, `tie_threshold_mse=1e-5`, `generate_maps=false`, `run_predictors=false`.
+- Descriptor-based characterization: pending; will consume `results/bicycle/3dgs_vs_ges_vs_drk_p32/patches.csv`.
+- Sensitivity analysis: pending; configured for patch sizes `32,64,128`, half-patch stride, tie thresholds `0,1e-5,5e-5`.
 - Garden/Bicycle cross-scene comparison: pending.
+
+### Cross-Scene Aggregation Preparation
+
+Garden and Bicycle are configured to share the same local comparison and characterization schemas. A later cross-scene aggregator should read each scene's `patches.csv`, `summary.json`, `characterization/descriptor_summary.csv`, `characterization/pairwise_effects.csv`, `characterization/winner_probability_by_descriptor.csv`, `characterization/feature_correlation_matrix.csv`, and `sensitivity/sensitivity_summary.csv`; add an explicit `scene` field where needed; and compare descriptor/winner patterns only after Bicycle alignment, p32 comparison, characterization, and sensitivity runs complete.
 
 ## Current Status / Next Experiment
 
 Garden: `baselines -> alignment -> local comparison -> sensitivity -> characterization` = COMPLETE.
 
-Bicycle: `baselines` = COMPLETE.
+Bicycle: `baselines` = COMPLETE; local-specialization setup is prepared but not yet run.
 
 Next: `alignment audit -> p32 local comparison -> characterization -> sensitivity -> Garden/Bicycle cross-scene comparison`.
 
 ## Experimental Safeguards / Interpretation Rules
 
 - Identical GT/test-view alignment must be verified before any local comparison.
+- Local comparison jobs must stop if Bicycle alignment is not exact/unambiguous for all 25 test views.
 - Global metric superiority does not imply local superiority.
 - 3DGS vs GES alone cannot establish cross-family specialization because Gaussian is nested within GES.
 - Three-family comparisons remain observational because methods differ in training recipes, capacities/primitive counts, and implementations.
