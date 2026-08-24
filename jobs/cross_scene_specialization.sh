@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=02:00:00
-#SBATCH --output=jobs/logs/cross_scene_specialization_%j.out
-#SBATCH --error=jobs/logs/cross_scene_specialization_%j.err
+#SBATCH --output=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/cross_scene_specialization_%j.out
+#SBATCH --error=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/cross_scene_specialization_%j.err
 
 set -eo pipefail
 
@@ -13,11 +13,15 @@ PROJECT_ROOT=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting
 ENV_PATH=/home/rizk_lab/shared/kiran/envs/kernel_splat
 OUTPUT_DIR=$PROJECT_ROOT/results/cross_scene/garden_vs_bicycle_p32
 
-mkdir -p "$PROJECT_ROOT/jobs/logs"
+mkdir -p "$PROJECT_ROOT/jobs/logs" "$OUTPUT_DIR"
 cd "$PROJECT_ROOT"
 
-source /home/rizk_lab/shared/kiran/miniconda3/etc/profile.d/conda.sh
+source /home/usd.local/kiran.prasannannair/miniforge3/etc/profile.d/conda.sh
+set +u
 conda activate "$ENV_PATH"
+set -u
+
+export TMPDIR=${TMPDIR:-/tmp}
 
 python --version
 python - <<'PY'
