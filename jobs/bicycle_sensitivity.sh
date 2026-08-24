@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=bicycle-sensitivity
+#SBATCH --partition=nodes
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=06:00:00
