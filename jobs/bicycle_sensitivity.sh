@@ -27,7 +27,7 @@ python scripts/evaluate/audit_alignment.py \
     --reference-gt-dir outputs/3dgs/bicycle_baseline/test/ours_30000/gt \
     --candidate-gt-dir outputs/drk/bicycle_baseline_DRK/metric/test \
     --candidate-name-template 'gt_{stem}.png' \
-    > "$ALIGNMENT_JSON"
+    --output-json "$ALIGNMENT_JSON"
 
 python - "$ALIGNMENT_JSON" <<'PY'
 import json
