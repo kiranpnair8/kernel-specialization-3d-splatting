@@ -1,6 +1,6 @@
 # Paper-1 Experiment Status Ledger
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Project Objective
 
@@ -24,6 +24,7 @@ Paper-1 studies whether different splatting/kernel families exhibit different lo
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Garden | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bicycle | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Room | ✓ | ✓ | ✓ | pending | pending | pending | pending |
 
 ## Garden Status
 
@@ -102,6 +103,34 @@ Bicycle global observation: 3DGS has the best PSNR and LPIPS; DRK has the best S
 - Descriptor-based characterization: COMPLETE from `results/bicycle/3dgs_vs_ges_vs_drk_p32/patches.csv`.
 - Sensitivity analysis: COMPLETE for patch sizes `32,64,128`, half-patch stride, tie thresholds `0,1e-5,5e-5`.
 
+## Room Status
+
+Overall chain: `baselines` = COMPLETE.
+
+Next chain: `alignment audit -> p32 local comparison -> characterization -> sensitivity`.
+
+### Baselines
+
+Room baselines are complete for 3DGS, GES, and DRK. Canonical metrics should be recorded from saved-model render/evaluation outputs before manuscript use.
+
+### Canonical Paths
+
+- Dataset: `datasets/mipnerf360/room`
+- 3DGS output: `outputs/3dgs/room_baseline`
+- GES output: `outputs/ges/room_baseline_00_2026-08-24--14-15-39`
+- DRK output: `outputs/drk/room_baseline_DRK`
+- p32 analysis config: `configs/room_3dgs_ges_drk_p32.json`
+- p32 analysis result root: `results/room/3dgs_vs_ges_vs_drk_p32/`
+- Baseline jobs: `jobs/3dgs_room_baseline.sh`, `jobs/ges_room_baseline.sh`, `jobs/drk_room_baseline.sh`
+- Analysis jobs: `jobs/room_p32_characterization.sh`, `jobs/room_sensitivity.sh`
+
+### Pending Analyses
+
+- GT alignment audit: pending; configured to compare 3DGS GT against DRK GT for 39 held-out Room test views.
+- p32 local comparison: pending; configured with `patch=32`, `stride=16`, `tie_threshold_mse=1e-5`, `generate_maps=false`, `run_predictors=false`.
+- Descriptor-based characterization: pending; will consume `results/room/3dgs_vs_ges_vs_drk_p32/patches.csv`.
+- Sensitivity analysis: pending; configured for patch sizes `32,64,128`, half-patch stride, tie thresholds `0,1e-5,5e-5`.
+
 ## Cross-Scene Analysis Status
 
 - Reusable aggregation script: `scripts/evaluate/cross_scene_specialization.py`.
@@ -116,7 +145,9 @@ Garden: `baselines -> alignment -> local comparison -> sensitivity -> characteri
 
 Bicycle: `baselines -> alignment -> local comparison -> sensitivity -> characterization` = COMPLETE.
 
-Next: `Garden/Bicycle cross-scene comparison`.
+Room: `baselines` = COMPLETE; local-specialization setup is prepared but not yet run.
+
+Next: `Room alignment audit -> Room p32 local comparison -> Room characterization -> Room sensitivity`.
 
 ## Experimental Safeguards / Interpretation Rules
 
