@@ -24,7 +24,7 @@ Paper-1 studies whether different splatting/kernel families exhibit different lo
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Garden | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bicycle | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Room | ✓ | ✓ | ✓ | pending | pending | pending | pending |
+| Room | ✓ | ✓ | ✓ | ✓ | ✓ | pending | ✓ |
 
 ## Garden Status
 
@@ -71,7 +71,7 @@ Sources: `docs/baseline_3dgs_garden.md`, `docs/baseline_ges_garden.md`, `docs/ba
 
 Overall chain: `baselines -> alignment -> local comparison -> sensitivity -> characterization` = COMPLETE.
 
-Next chain: `Garden/Bicycle cross-scene comparison`.
+Next chain: `Garden/Bicycle/Room cross-scene comparison`.
 
 ### Baselines
 
@@ -105,9 +105,9 @@ Bicycle global observation: 3DGS has the best PSNR and LPIPS; DRK has the best S
 
 ## Room Status
 
-Overall chain: `baselines` = COMPLETE.
+Overall chain: `baselines -> alignment -> local comparison -> characterization` = COMPLETE; `sensitivity` = pending.
 
-Next chain: `alignment audit -> p32 local comparison -> characterization -> sensitivity`.
+Next chain: `Room sensitivity -> Garden/Bicycle/Room cross-scene comparison`.
 
 ### Baselines
 
@@ -121,22 +121,24 @@ Room baselines are complete for 3DGS, GES, and DRK. Canonical metrics should be 
 - DRK output: `outputs/drk/room_baseline_DRK`
 - p32 analysis config: `configs/room_3dgs_ges_drk_p32.json`
 - p32 analysis result root: `results/room/3dgs_vs_ges_vs_drk_p32/`
+- p32 characterization results: `results/room/3dgs_vs_ges_vs_drk_p32/characterization/`
 - Baseline jobs: `jobs/3dgs_room_baseline.sh`, `jobs/ges_room_baseline.sh`, `jobs/drk_room_baseline.sh`
 - Analysis jobs: `jobs/room_p32_characterization.sh`, `jobs/room_sensitivity.sh`
 
-### Pending Analyses
+### Completed / Pending Analyses
 
-- GT alignment audit: pending; configured to compare 3DGS GT against DRK GT for 39 held-out Room test views.
-- p32 local comparison: pending; configured with `patch=32`, `stride=16`, `tie_threshold_mse=1e-5`, `generate_maps=false`, `run_predictors=false`.
-- Descriptor-based characterization: pending; will consume `results/room/3dgs_vs_ges_vs_drk_p32/patches.csv`.
+- GT alignment audit: COMPLETE for the 39 held-out Room test views before local comparison.
+- p32 local comparison: COMPLETE with `patch=32`, `stride=16`, `tie_threshold_mse=1e-5`, `generate_maps=false`, `run_predictors=false`.
+- Descriptor-based characterization: COMPLETE from `results/room/3dgs_vs_ges_vs_drk_p32/patches.csv`.
 - Sensitivity analysis: pending; configured for patch sizes `32,64,128`, half-patch stride, tie thresholds `0,1e-5,5e-5`.
 
 ## Cross-Scene Analysis Status
 
 - Reusable aggregation script: `scripts/evaluate/cross_scene_specialization.py`.
 - Reproducible Slurm job: `jobs/cross_scene_specialization.sh`.
-- Intended output root: `results/cross_scene/garden_vs_bicycle_p32/`.
-- Status: configured and ready to run; cross-scene outputs should be inspected before recording any conclusions.
+- Current three-scene output root: `results/cross_scene/garden_bicycle_room_p32/`.
+- Historical two-scene output root: `results/cross_scene/garden_vs_bicycle_p32/`.
+- Status: configured for Garden, Bicycle, and Room; cross-scene outputs should be inspected before recording any conclusions.
 - Required per-scene inputs: each scene's `summary.json`, `characterization/descriptor_summary.csv`, `characterization/pairwise_effects.csv`, and `characterization/winner_probability_by_descriptor.csv`.
 
 ## Current Status / Next Experiment
@@ -145,9 +147,9 @@ Garden: `baselines -> alignment -> local comparison -> sensitivity -> characteri
 
 Bicycle: `baselines -> alignment -> local comparison -> sensitivity -> characterization` = COMPLETE.
 
-Room: `baselines` = COMPLETE; local-specialization setup is prepared but not yet run.
+Room: `baselines -> alignment -> local comparison -> characterization` = COMPLETE; `sensitivity` = pending.
 
-Next: `Room alignment audit -> Room p32 local comparison -> Room characterization -> Room sensitivity`.
+Next: `Garden/Bicycle/Room cross-scene comparison`, then Room sensitivity if needed for robustness reporting.
 
 ## Experimental Safeguards / Interpretation Rules
 

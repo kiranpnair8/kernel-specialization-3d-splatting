@@ -81,9 +81,24 @@ def _as_float(value: Any) -> float | None:
 
 
 def _sign(value: float | None, eps: float = 1e-12) -> str:
-    if value is None or abs(value) <= eps:
+    if value is None:
+        return "missing"
+    if abs(value) <= eps:
         return "zero"
     return "positive" if value > 0 else "negative"
+
+
+def _status_from_signs(signs: list[str]) -> str:
+    if not signs or any(sign == "missing" for sign in signs):
+        return "missing"
+    nonzero = [sign for sign in signs if sign != "zero"]
+    if not nonzero:
+        return "disappears_or_weakens"
+    if len(set(nonzero)) == 1 and len(nonzero) == len(signs):
+        return "same_direction"
+    if len(set(nonzero)) == 1:
+        return "disappears_or_weakens"
+    return "mixed_directions"
 
 
 def _slope(xs: list[float], ys: list[float]) -> float | None:
@@ -95,14 +110,6 @@ def _slope(xs: list[float], ys: list[float]) -> float | None:
     if float(np.ptp(x)) == 0.0:
         return None
     return float(np.polyfit(x, y, deg=1)[0])
-
-
-def _status_from_signs(a: str, b: str) -> str:
-    if a == "missing" or b == "missing":
-        return "missing"
-    if a == "zero" or b == "zero":
-        return "disappears_or_weakens"
-    return "same_direction" if a == b else "reversed"
 
 
 def _parse_scene(value: str) -> tuple[str, Path]:
@@ -206,10 +213,18 @@ def descriptor_medians(scene: dict[str, Any]) -> dict[tuple[str, str], float | N
     return medians
 
 
+def _attach_scene_values(row: dict[str, Any], scene_values: dict[str, tuple[float | None, str]], scene_names: list[str]) -> None:
+    for scene_name in scene_names:
+        value, direction = scene_values.get(scene_name, (None, "missing"))
+        row[f"{scene_name}_value"] = value
+        row[f"{scene_name}_direction"] = direction
+    signs = [row[f"{scene_name}_direction"] for scene_name in scene_names]
+    row["status"] = _status_from_signs(signs)
+    row["direction_consistent_across_scenes"] = row["status"] == "same_direction"
+
+
 def build_effect_consistency(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if len(scenes) != 2:
-        raise ValueError("Effect consistency currently expects exactly two scenes")
-    a, b = scenes
+    scene_names = [scene["name"] for scene in scenes]
     rows: list[dict[str, Any]] = []
     pairs: dict[tuple[str, str, str], dict[str, dict[str, str]]] = defaultdict(dict)
     for scene in scenes:
@@ -217,111 +232,92 @@ def build_effect_consistency(scenes: list[dict[str, Any]]) -> list[dict[str, Any
             key = (row.get("descriptor", ""), row.get("left_winner", ""), row.get("right_winner", ""))
             pairs[key][scene["name"]] = row
     for (descriptor, left, right), by_scene in sorted(pairs.items()):
-        left_row = by_scene.get(a["name"], {})
-        right_row = by_scene.get(b["name"], {})
-        av = _as_float(left_row.get("median_difference_left_minus_right"))
-        bv = _as_float(right_row.get("median_difference_left_minus_right"))
-        asign = "missing" if av is None else _sign(av)
-        bsign = "missing" if bv is None else _sign(bv)
-        rows.append({
+        out: dict[str, Any] = {
             "analysis": "descriptor_median_pairwise",
             "descriptor": descriptor,
             "method": "",
             "left_winner": left,
             "right_winner": right,
-            f"{a['name']}_value": av,
-            f"{b['name']}_value": bv,
-            f"{a['name']}_direction": asign,
-            f"{b['name']}_direction": bsign,
-            f"{a['name']}_p_value_bh_fdr": left_row.get("p_value_bh_fdr"),
-            f"{b['name']}_p_value_bh_fdr": right_row.get("p_value_bh_fdr"),
-            "status": _status_from_signs(asign, bsign),
             "interpretation_note": "Observational descriptor distribution difference; not causal evidence.",
-        })
+        }
+        scene_values = {}
+        for scene_name in scene_names:
+            scene_row = by_scene.get(scene_name, {})
+            value = _as_float(scene_row.get("median_difference_left_minus_right"))
+            scene_values[scene_name] = (value, _sign(value))
+            out[f"{scene_name}_p_value_bh_fdr"] = scene_row.get("p_value_bh_fdr")
+        _attach_scene_values(out, scene_values, scene_names)
+        rows.append(out)
     slopes = {scene["name"]: probability_slopes(scene) for scene in scenes}
-    keys = sorted(set(slopes[a["name"]]) | set(slopes[b["name"]]))
-    for descriptor, method in keys:
-        av = slopes[a["name"]].get((descriptor, method))
-        bv = slopes[b["name"]].get((descriptor, method))
-        asign = "missing" if av is None else _sign(av)
-        bsign = "missing" if bv is None else _sign(bv)
-        rows.append({
+    slope_keys = sorted(set().union(*(scene_slopes.keys() for scene_slopes in slopes.values())))
+    for descriptor, method in slope_keys:
+        out = {
             "analysis": "winner_probability_slope",
             "descriptor": descriptor,
             "method": method,
             "left_winner": "",
             "right_winner": "",
-            f"{a['name']}_value": av,
-            f"{b['name']}_value": bv,
-            f"{a['name']}_direction": asign,
-            f"{b['name']}_direction": bsign,
-            "status": _status_from_signs(asign, bsign),
             "interpretation_note": "Slope of binned winner probability vs descriptor value.",
-        })
+        }
+        scene_values = {}
+        for scene_name in scene_names:
+            value = slopes[scene_name].get((descriptor, method))
+            scene_values[scene_name] = (value, _sign(value))
+        _attach_scene_values(out, scene_values, scene_names)
+        rows.append(out)
     medians = {scene["name"]: descriptor_medians(scene) for scene in scenes}
     for descriptor in DESCRIPTORS:
-        values = []
-        directions = []
-        for scene in scenes:
-            scene_medians = medians[scene["name"]]
-            drk = scene_medians.get((descriptor, "drk"))
-            others = [scene_medians.get((descriptor, m)) for m in ("3dgs", "ges")]
-            others = [v for v in others if v is not None]
-            value = None if drk is None or not others else drk - statistics.fmean(others)
-            values.append(value)
-            directions.append("missing" if value is None else _sign(value))
-        rows.append({
+        out = {
             "analysis": "drk_median_minus_other_methods",
             "descriptor": descriptor,
             "method": "drk",
             "left_winner": "drk",
             "right_winner": "3dgs_ges_mean",
-            f"{a['name']}_value": values[0],
-            f"{b['name']}_value": values[1],
-            f"{a['name']}_direction": directions[0],
-            f"{b['name']}_direction": directions[1],
-            "status": _status_from_signs(directions[0], directions[1]),
             "interpretation_note": "Negative values mean DRK-winning patches have lower descriptor median than the 3DGS/GES average.",
-        })
+        }
+        scene_values = {}
+        for scene_name in scene_names:
+            scene_medians = medians[scene_name]
+            drk = scene_medians.get((descriptor, "drk"))
+            others = [scene_medians.get((descriptor, method)) for method in ("3dgs", "ges")]
+            others = [value for value in others if value is not None]
+            value = None if drk is None or not others else drk - statistics.fmean(others)
+            scene_values[scene_name] = (value, _sign(value))
+        _attach_scene_values(out, scene_values, scene_names)
+        rows.append(out)
     return rows
 
 
 def build_question_summary(scene_rows: list[dict[str, Any]], effects: list[dict[str, Any]], scene_names: list[str]) -> dict[str, Any]:
-    slope_rows = [r for r in effects if r["analysis"] == "winner_probability_slope"]
-    same = [r for r in slope_rows if r["status"] == "same_direction"]
-    reversed_or_weak = [r for r in slope_rows if r["status"] != "same_direction"]
-    ges_high = [r for r in slope_rows if r["method"] == "ges" and r["descriptor"] in HIGH_COMPLEXITY_DESCRIPTORS]
-    drk_low = [r for r in effects if r["analysis"] == "drk_median_minus_other_methods" and r["descriptor"] in HIGH_COMPLEXITY_DESCRIPTORS]
+    slope_rows = [row for row in effects if row["analysis"] == "winner_probability_slope"]
+    ges_high = [row for row in slope_rows if row["method"] == "ges" and row["descriptor"] in HIGH_COMPLEXITY_DESCRIPTORS]
+    drk_low = [row for row in effects if row["analysis"] == "drk_median_minus_other_methods" and row["descriptor"] in HIGH_COMPLEXITY_DESCRIPTORS]
 
-    def both_positive(row: dict[str, Any]) -> bool:
-        return all(row.get(f"{name}_direction") == "positive" for name in scene_names)
-
-    def both_negative(row: dict[str, Any]) -> bool:
-        return all(row.get(f"{name}_direction") == "negative" for name in scene_names)
+    def all_direction(row: dict[str, Any], direction: str) -> bool:
+        return all(row.get(f"{scene_name}_direction") == direction for scene_name in scene_names)
 
     comparisons = []
-    if len(scene_rows) == 2:
-        first, second = scene_rows
-        for metric in ["3dgs_winner_fraction", "ges_winner_fraction", "drk_winner_fraction", "tie_fraction", "non_3dgs_winner_fraction", "oracle_relative_improvement_pct_vs_3dgs"]:
-            av = _as_float(first.get(metric))
-            bv = _as_float(second.get(metric))
-            comparisons.append({
-                "metric": metric,
-                scene_names[0]: av,
-                scene_names[1]: bv,
-                "absolute_difference": None if av is None or bv is None else abs(av - bv),
-            })
+    for metric in ["3dgs_winner_fraction", "ges_winner_fraction", "drk_winner_fraction", "tie_fraction", "non_3dgs_winner_fraction", "oracle_improvement_mse_vs_3dgs", "oracle_relative_improvement_pct_vs_3dgs"]:
+        values = [_as_float(row.get(metric)) for row in scene_rows]
+        finite = [value for value in values if value is not None]
+        comparisons.append({
+            "metric": metric,
+            **{scene_names[i]: values[i] for i in range(len(scene_names))},
+            "min": None if not finite else min(finite),
+            "max": None if not finite else max(finite),
+            "range": None if len(finite) < 2 else max(finite) - min(finite),
+        })
     return {
         "observational_warning": "Cross-scene patterns summarize independently trained systems and must not be interpreted as controlled causal kernel-family effects.",
-        "same_direction_descriptor_winner_trends": same,
-        "reversed_or_disappeared_descriptor_winner_trends": reversed_or_weak,
+        "same_direction_descriptor_winner_trends": [row for row in slope_rows if row["status"] == "same_direction"],
+        "effects_that_reverse_or_disappear": [row for row in effects if row["status"] != "same_direction"],
         "ges_high_complexity_assessment": {
             "descriptors": ges_high,
-            "all_high_complexity_slopes_positive_in_both_scenes": bool(ges_high) and all(both_positive(r) for r in ges_high),
+            "all_high_complexity_slopes_positive_in_all_scenes": bool(ges_high) and all(all_direction(row, "positive") for row in ges_high),
         },
         "drk_lower_complexity_assessment": {
             "descriptors": drk_low,
-            "all_high_complexity_median_differences_negative_in_both_scenes": bool(drk_low) and all(both_negative(r) for r in drk_low),
+            "all_high_complexity_median_differences_negative_in_all_scenes": bool(drk_low) and all(all_direction(row, "negative") for row in drk_low),
         },
         "winner_fraction_and_oracle_gain_similarity": comparisons,
     }
@@ -351,7 +347,8 @@ def draw_probability_plots(out_dir: Path, scenes: list[dict[str, Any]]) -> None:
         for row in scene["winner_probability"]:
             grouped[row["descriptor"]][scene["name"]].append(row)
     for descriptor in sorted(grouped):
-        width, height = 1200, 520
+        width = max(1200, 410 * len(scenes))
+        height = 520
         img = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(img)
         draw.text((28, 16), f"Winner probability by {descriptor}", fill=(20, 20, 20), font=_font(18))
@@ -361,7 +358,7 @@ def draw_probability_plots(out_dir: Path, scenes: list[dict[str, Any]]) -> None:
             x0 = 60 + i * panel_w
             box = (x0, 90, x0 + panel_w - 45, height - 80)
             _draw_axes(draw, box, scene["name"])
-            xs_raw = [_as_float(r.get("bin_mid")) for r in rows]
+            xs_raw = [_as_float(row.get("bin_mid")) for row in rows]
             finite = [x for x in xs_raw if x is not None]
             if len(finite) < 2:
                 continue
@@ -381,8 +378,8 @@ def draw_probability_plots(out_dir: Path, scenes: list[dict[str, Any]]) -> None:
                     points.append((px, py))
                 if len(points) >= 2:
                     draw.line(points, fill=COLORS[method], width=3)
-                for p in points:
-                    draw.ellipse((p[0] - 3, p[1] - 3, p[0] + 3, p[1] + 3), fill=COLORS[method])
+                for point in points:
+                    draw.ellipse((point[0] - 3, point[1] - 3, point[0] + 3, point[1] + 3), fill=COLORS[method])
             draw.text((bx0, by1 + 14), "descriptor quantile bins", fill=(80, 80, 80), font=_font(11))
         lx, ly = width - 145, 58
         for method in METHODS:
@@ -393,18 +390,18 @@ def draw_probability_plots(out_dir: Path, scenes: list[dict[str, Any]]) -> None:
 
 
 def draw_bar_plot(path: Path, title: str, rows: list[dict[str, Any]], metrics: list[str]) -> None:
-    width, height = 1100, 520
+    width, height = 1200, 540
     img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(img)
     draw.text((28, 18), title, fill=(20, 20, 20), font=_font(18))
-    x0, y0, x1, y1 = 70, 85, width - 40, height - 88
+    x0, y0, x1, y1 = 70, 85, width - 40, height - 92
     draw.line((x0, y1, x1, y1), fill=(40, 40, 40), width=2)
     draw.line((x0, y0, x0, y1), fill=(40, 40, 40), width=2)
     values = [_as_float(row.get(metric)) or 0.0 for row in rows for metric in metrics]
     ymax = max(values + [1.0])
     ymax = 1.0 if ymax <= 1.0 else ymax * 1.1
     group_w = (x1 - x0) / max(1, len(metrics))
-    bar_w = min(34, group_w / (len(rows) + 1.5))
+    bar_w = min(30, group_w / (len(rows) + 1.5))
     scene_colors = [(72, 116, 180), (238, 137, 73), (82, 156, 86), (170, 90, 150)]
     for mi, metric in enumerate(metrics):
         center = x0 + group_w * (mi + 0.5)
@@ -426,15 +423,16 @@ def draw_bar_plot(path: Path, title: str, rows: list[dict[str, Any]], metrics: l
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scene", action="append", type=_parse_scene, default=None, help="Scene input as name=result_dir. Repeat twice.")
-    parser.add_argument("--output-dir", default="results/cross_scene/garden_vs_bicycle_p32", help="Directory for cross-scene outputs.")
+    parser.add_argument("--scene", action="append", type=_parse_scene, default=None, help="Scene input as name=result_dir. Repeat for each scene.")
+    parser.add_argument("--output-dir", default="results/cross_scene/garden_bicycle_room_p32", help="Directory for cross-scene outputs.")
     args = parser.parse_args()
     scene_args = args.scene or [
         ("garden", _resolve("results/garden/3dgs_vs_ges_vs_drk_p32")),
         ("bicycle", _resolve("results/bicycle/3dgs_vs_ges_vs_drk_p32")),
+        ("room", _resolve("results/room/3dgs_vs_ges_vs_drk_p32")),
     ]
-    if len(scene_args) != 2:
-        parser.error("Exactly two scenes are currently supported for consistency comparisons")
+    if len(scene_args) < 2:
+        parser.error("At least two scenes are required for cross-scene consistency comparisons")
     out_dir = _resolve(args.output_dir)
     scenes = [load_scene(name, root) for name, root in scene_args]
     scene_rows = [scene_summary_row(scene) for scene in scenes]
@@ -454,7 +452,8 @@ def main() -> int:
     _write_csv(out_dir / "winner_probability_by_descriptor_by_scene.csv", winner_probability_by_scene(scenes))
     draw_probability_plots(out_dir, scenes)
     draw_bar_plot(out_dir / "figures" / "winner_fraction_comparison.png", "Winner fractions by scene", scene_rows, ["3dgs_winner_fraction", "ges_winner_fraction", "drk_winner_fraction", "tie_fraction", "non_3dgs_winner_fraction"])
-    draw_bar_plot(out_dir / "figures" / "oracle_gain_vs_3dgs.png", "Oracle relative MSE improvement vs 3DGS", scene_rows, ["oracle_relative_improvement_pct_vs_3dgs"])
+    draw_bar_plot(out_dir / "figures" / "oracle_mse_improvement_vs_3dgs.png", "Oracle MSE improvement vs 3DGS", scene_rows, ["oracle_improvement_mse_vs_3dgs"])
+    draw_bar_plot(out_dir / "figures" / "oracle_relative_gain_vs_3dgs.png", "Oracle relative MSE improvement vs 3DGS", scene_rows, ["oracle_relative_improvement_pct_vs_3dgs"])
     print(f"Wrote cross-scene outputs to {out_dir}")
     return 0
 
