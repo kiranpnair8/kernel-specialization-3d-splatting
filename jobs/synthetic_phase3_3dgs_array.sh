@@ -47,6 +47,8 @@ export WANDB_MODE=offline
 export WANDB_SILENT=true
 
 cd "$PROJECT_ROOT"
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT"
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT" --verify-only
 python scripts/synthetic/prepare_nerf_synthetic_inputs.py --dataset-root "$DATASET_ROOT" --scene-id "$SCENE_ID" --point-count 100000 --seed 0 --check-only
 
 echo "============================================================"

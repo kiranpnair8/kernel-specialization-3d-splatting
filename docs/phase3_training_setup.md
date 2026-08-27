@@ -20,6 +20,29 @@ Direct NeRF-synthetic loading is supported by all three current upstream pipelin
 
 A COLMAP conversion is not required for this pilot. If a future local fork rejects the direct transforms format, the deterministic conversion path is to emit a COLMAP sparse model from the known analytic intrinsics/extrinsics while preserving the existing transform-defined split.
 
+## NeRF Loader Compatibility Patch
+
+The current HPC NumPy/Pillow stack rejects signed int8 RGB arrays. The pinned 3DGS loader and pinned GES loader both construct synthetic RGB images with:
+
+```python
+Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
+```
+
+`np.byte` is signed int8, which can raise:
+
+```text
+TypeError: Cannot handle this data type: (1, 1, 3), |i1
+```
+
+DRK's inspected NeRF-synthetic loader already uses `np.uint8` in the corresponding Pillow conversion path. The tracked compatibility script below idempotently patches gitignored local upstream checkouts and then verifies that no legacy signed-byte conversion remains:
+
+```bash
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT"
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT" --verify-only
+```
+
+This changes only the local external loader dtype cast from `np.byte` to `np.uint8`. It does not change camera handling, rendering logic, training hyperparameters, datasets, or method protocol. The loader-check job and all synthetic training arrays apply/verify this compatibility patch before using the loaders.
+
 ## Image And Path Conventions
 
 The generator writes frame paths without an image extension, for example:

@@ -59,6 +59,10 @@ PY
 set +u
 conda activate /home/rizk_lab/shared/kiran/envs/kernel_splat
 set -u
+python -m compileall scripts/synthetic/prepare_nerf_synthetic_inputs.py scripts/synthetic/patch_nerf_synthetic_loader_dtype.py
+bash -n jobs/synthetic_phase3_loader_check.sh jobs/synthetic_phase3_3dgs_array.sh jobs/synthetic_phase3_ges_array.sh jobs/synthetic_phase3_drk_array.sh
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT"
+python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT" --verify-only
 python scripts/synthetic/prepare_nerf_synthetic_inputs.py \
   --dataset-root "$PROJECT_ROOT/datasets/synthetic/phase3_controlled_pilot" \
   --scene-id "$SCENE_ID" \
