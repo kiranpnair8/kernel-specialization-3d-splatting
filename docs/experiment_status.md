@@ -145,6 +145,30 @@ Planned directions:
 
 Additional MiP-NeRF 360 scenes are lower priority for now because Garden, Bicycle, and Room already provide three-scene replication. Additional scenes can be added later if needed for robustness.
 
+## Phase III — Controlled Synthetic Pilot
+
+Status: input-compatible and ready for V100-only pilot training arrays; no large synthetic training sweep has been launched from the repository setup.
+
+- Dataset root: `datasets/synthetic/phase3_controlled_pilot/`
+- Design doc: `docs/synthetic_experiment_design.md`
+- Training setup doc: `docs/phase3_training_setup.md`
+- Input prep job: `jobs/synthetic_phase3_prepare.sh`
+- Loader check job: `jobs/synthetic_phase3_loader_check.sh`
+- GPU arrays: `jobs/synthetic_phase3_3dgs_array.sh`, `jobs/synthetic_phase3_ges_array.sh`, `jobs/synthetic_phase3_drk_array.sh`
+
+Loader status:
+
+- 3DGS, GES, and DRK directly consume `transforms_train.json` and `transforms_test.json`.
+- The 24 train / 8 test split is preserved by the generated transform files and must not be recomputed with LLFF holdout rules.
+- 3DGS and GES require the tracked compatibility patch that changes their NeRF-synthetic Pillow image cast from signed `np.byte` to `np.uint8` on the gitignored external checkouts.
+- DRK's inspected loader already uses `np.uint8` for this path.
+- All three loaders have been verified on `phase3_edge_sharpness_low_seed0000` to see 24 train cameras, 8 test cameras, aligned image paths, and the same deterministic `points3d.ply`.
+
+Hardware rule:
+
+- Synthetic GPU arrays are constrained to `gpu003,gpu004,gpu005` because the current CUDA extensions are built for Tesla V100 / `sm_70`.
+- P100 / `sm_60` nodes are incompatible with those V100-compiled extensions and should not be used for these jobs unless the extensions are rebuilt for the target architecture.
+
 ## Checklist
 
 | Scene | 3DGS | GES | DRK | Alignment | Local p32 | Sensitivity | Characterization |
@@ -280,6 +304,8 @@ Cross-scene: `Garden/Bicycle/Room p32 specialization aggregation` = COMPLETE.
 
 Phase II: complexity-stratified reconstruction-error analysis is implemented and ready to run; controlled causal tests are still next.
 
+Phase III: controlled synthetic pilot inputs and V100-constrained training arrays are ready; no synthetic training sweep has been launched from this setup.
+
 ## Experimental Safeguards / Interpretation Rules
 
 - Identical GT/test-view alignment must be verified before any local comparison.
@@ -291,5 +317,6 @@ Phase II: complexity-stratified reconstruction-error analysis is implemented and
 - Patch conclusions must survive patch-size and tie-threshold sensitivity analysis.
 - Descriptor associations are not causal evidence.
 - Complexity-stratified error trends remain observational and must not be interpreted as causal effects of descriptors or kernel families.
+- Synthetic GPU training arrays must run on V100 / `sm_70` nodes (`gpu003,gpu004,gpu005`) with the current compiled CUDA extensions; P100 / `sm_60` nodes are incompatible unless extensions are rebuilt for that architecture.
 - Canonical metrics should come from saved-model render/evaluation outputs rather than intermediate training logs.
 - Long-running training and analyses should have reproducible Slurm job scripts under `jobs/` rather than being intended primarily for interactive execution.
