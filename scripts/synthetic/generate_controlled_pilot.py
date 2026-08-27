@@ -16,7 +16,7 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "output_root": "../datasets/synthetic/phase3_controlled_pilot",
+    "output_root": "datasets/synthetic/phase3_controlled_pilot",
     "dataset_format": "nerf_synthetic_transforms",
     "seed": 0,
     "resolution": [256, 256],
