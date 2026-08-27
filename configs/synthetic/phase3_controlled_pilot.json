@@ -1,0 +1,39 @@
+{
+  "output_root": "../datasets/synthetic/phase3_controlled_pilot",
+  "dataset_format": "nerf_synthetic_transforms",
+  "seed": 0,
+  "resolution": [256, 256],
+  "train_view_count": 24,
+  "test_view_count": 8,
+  "camera_radius": 2.8,
+  "camera_elevation_degrees": 35.0,
+  "camera_angle_x_degrees": 50.0,
+  "scene_extent": 1.15,
+  "background_color": [1.0, 1.0, 1.0],
+  "sweeps": {
+    "edge_sharpness": {
+      "parameter_name": "transition_width",
+      "levels": {
+        "low": 0.32,
+        "medium": 0.12,
+        "high": 0.035
+      }
+    },
+    "spatial_frequency": {
+      "parameter_name": "cycles_per_scene_width",
+      "levels": {
+        "low": 2.0,
+        "medium": 6.0,
+        "high": 14.0
+      }
+    },
+    "curvature": {
+      "parameter_name": "paraboloid_amplitude",
+      "levels": {
+        "low": 0.02,
+        "medium": 0.18,
+        "high": 0.42
+      }
+    }
+  }
+}
