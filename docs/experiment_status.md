@@ -1,6 +1,6 @@
 # Paper-1 Experiment Status Ledger
 
-Last updated: 2026-08-25
+Last updated: 2026-08-27
 
 ## Project Objective
 
@@ -106,9 +106,32 @@ Interpretation boundaries:
 
 ## Phase II — Controlled Specialization Experiments
 
-Status: NEXT / NOT YET COMPLETED.
+Status: NEXT / NOT YET COMPLETED. Complexity-stratified reconstruction-error analysis is implemented, but results are not yet interpreted.
 
 Objective: determine whether the observed local specialization can be attributed more directly to kernel representation properties rather than independent training and implementation confounders.
+
+### Complexity-stratified reconstruction error
+
+Status: implemented, not yet interpreted.
+
+This analysis asks whether method-to-method reconstruction-error differences vary systematically with GT-derived local structure. It directly analyzes each method's patch reconstruction MSE and paired patch-level deltas (`GES - 3DGS`, `DRK - 3DGS`, `GES - DRK`) across descriptor quantile bins, rather than analyzing winner labels alone.
+
+Implementation paths:
+
+- Script: `scripts/evaluate/complexity_stratified_errors.py`
+- Slurm job: `jobs/complexity_stratified_errors.sh`
+- Output root: `results/cross_scene/complexity_stratified_errors_p32/`
+- Inputs: `results/garden/3dgs_vs_ges_vs_drk_p32/patches.csv`, `results/bicycle/3dgs_vs_ges_vs_drk_p32/patches.csv`, `results/room/3dgs_vs_ges_vs_drk_p32/patches.csv`
+
+Interpretation rules:
+
+- This remains observational.
+- Descriptors are computed from GT images.
+- Overlapping patches are not treated as independent for uncertainty estimation.
+- View-level cluster bootstrap is used for paired-delta confidence intervals.
+- Scene is treated as the replication unit for cross-scene interpretation.
+- This analysis does not establish causality.
+- Controlled synthetic experiments remain the next stronger causal test.
 
 Planned directions:
 
@@ -255,7 +278,7 @@ Room: `baselines -> alignment -> local comparison -> sensitivity -> characteriza
 
 Cross-scene: `Garden/Bicycle/Room p32 specialization aggregation` = COMPLETE.
 
-Next: Phase II controlled specialization experiments.
+Phase II: complexity-stratified reconstruction-error analysis is implemented and ready to run; controlled causal tests are still next.
 
 ## Experimental Safeguards / Interpretation Rules
 
@@ -267,5 +290,6 @@ Next: Phase II controlled specialization experiments.
 - Cross-scene agreement strengthens robustness of observed patterns but still does not prove causal kernel specialization.
 - Patch conclusions must survive patch-size and tie-threshold sensitivity analysis.
 - Descriptor associations are not causal evidence.
+- Complexity-stratified error trends remain observational and must not be interpreted as causal effects of descriptors or kernel families.
 - Canonical metrics should come from saved-model render/evaluation outputs rather than intermediate training logs.
 - Long-running training and analyses should have reproducible Slurm job scripts under `jobs/` rather than being intended primarily for interactive execution.
