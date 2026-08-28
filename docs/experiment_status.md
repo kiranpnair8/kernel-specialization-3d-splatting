@@ -147,7 +147,7 @@ Additional MiP-NeRF 360 scenes are lower priority for now because Garden, Bicycl
 
 ## Phase III — Controlled Synthetic Pilot
 
-Status: TRAINING COMPLETE for the deterministic 9-scene x 3-method pilot. Final successful arrays completed 27/27 runs.
+Status: TRAINING COMPLETE for the deterministic 9-scene x 3-method pilot. Final successful arrays completed 27/27 runs, and inventory reports 27/27 expected outputs complete with 0 partial and 0 missing.
 
 - Dataset root: `datasets/synthetic/phase3_controlled_pilot/`
 - Design doc: `docs/synthetic_experiment_design.md`
@@ -156,7 +156,8 @@ Status: TRAINING COMPLETE for the deterministic 9-scene x 3-method pilot. Final 
 - Loader check job: `jobs/synthetic_phase3_loader_check.sh`
 - GPU arrays: `jobs/synthetic_phase3_3dgs_array.sh`, `jobs/synthetic_phase3_ges_array.sh`, `jobs/synthetic_phase3_drk_array.sh`
 - Inventory script: `scripts/synthetic/inventory_phase3_outputs.py`
-- Inventory output root: `results/synthetic/phase3_controlled_pilot/`
+- Cleanup script: `scripts/synthetic/cleanup_phase3_outputs.py`
+- Inventory/cleanup output root: `results/synthetic/phase3_controlled_pilot/`
 
 Loader/training status:
 
@@ -166,6 +167,14 @@ Loader/training status:
 - DRK final array `1254698`: 9/9 tasks successful.
 - Earlier arrays `1254668`, `1254669`, and `1254675` were failed/mixed attempts and are superseded.
 - The inventory script scans the 9-scene manifest and verifies selected outputs for all three methods without deleting or modifying stale/partial directories.
+- The current inventory reports 27 stale/partial extra candidates. These are not canonical outputs.
+
+Phase-III cleanup usage:
+
+- Dry-run only: `python scripts/synthetic/cleanup_phase3_outputs.py`
+- Dry-run without log scanning: `python scripts/synthetic/cleanup_phase3_outputs.py --skip-logs`
+- Delete only after reviewing `results/synthetic/phase3_controlled_pilot/cleanup_plan.md`: `python scripts/synthetic/cleanup_phase3_outputs.py --delete`
+- The cleanup script recomputes canonical selections from the current inventory logic, refuses to include selected canonical outputs, never scans/deletes datasets, and only treats superseded job-array logs as obsolete while preserving loader-check and final successful array logs.
 
 Loader assumptions:
 
@@ -317,7 +326,7 @@ Cross-scene: `Garden/Bicycle/Room p32 specialization aggregation` = COMPLETE.
 
 Phase II: complexity-stratified reconstruction-error analysis is implemented and ready to run; controlled causal tests are still next.
 
-Phase III: controlled synthetic pilot training is COMPLETE for 27/27 method-scene runs; run the inventory script before using the synthetic outputs for local analysis or interpretation.
+Phase III: controlled synthetic pilot training is COMPLETE for 27/27 method-scene runs; inventory reports all expected outputs complete. Optional cleanup should be run as a dry-run first and reviewed before any deletion.
 
 ## Experimental Safeguards / Interpretation Rules
 
@@ -331,5 +340,6 @@ Phase III: controlled synthetic pilot training is COMPLETE for 27/27 method-scen
 - Descriptor associations are not causal evidence.
 - Complexity-stratified error trends remain observational and must not be interpreted as causal effects of descriptors or kernel families.
 - Synthetic GPU training arrays must run on V100 / `sm_70` nodes (`gpu003,gpu004,gpu005`) with the current compiled CUDA extensions; P100 / `sm_60` nodes are incompatible unless extensions are rebuilt for that architecture.
+- Phase-III cleanup must protect the selected canonical output for every method-scene experiment, must never touch datasets, and must default to dry-run.
 - Canonical metrics should come from saved-model render/evaluation outputs rather than intermediate training logs.
 - Long-running training and analyses should have reproducible Slurm job scripts under `jobs/` rather than being intended primarily for interactive execution.
