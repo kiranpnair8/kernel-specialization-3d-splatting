@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=00:30:00
-#SBATCH --output=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/synthetic_phase3_loader_check_%j.out
-#SBATCH --error=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/synthetic_phase3_loader_check_%j.err
+#SBATCH --output=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/phase3/setup/synthetic_phase3_loader_check_%j.out
+#SBATCH --error=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/phase3/setup/synthetic_phase3_loader_check_%j.err
 
 set -eo pipefail
 
@@ -14,7 +14,7 @@ PROJECT_ROOT=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting
 DATASET=$PROJECT_ROOT/datasets/synthetic/phase3_controlled_pilot/phase3_edge_sharpness_low_seed0000
 SCENE_ID=phase3_edge_sharpness_low_seed0000
 
-mkdir -p "$PROJECT_ROOT/jobs/logs"
+mkdir -p "$PROJECT_ROOT/jobs/logs/phase3/setup"
 cd "$PROJECT_ROOT"
 
 module purge
@@ -59,7 +59,7 @@ PY
 set +u
 conda activate /home/rizk_lab/shared/kiran/envs/kernel_splat
 set -u
-python -m compileall scripts/synthetic/prepare_nerf_synthetic_inputs.py scripts/synthetic/patch_nerf_synthetic_loader_dtype.py
+python -m compileall scripts/synthetic/prepare_nerf_synthetic_inputs.py scripts/synthetic/patch_nerf_synthetic_loader_dtype.py scripts/synthetic/inventory_phase3_outputs.py
 bash -n jobs/synthetic_phase3_loader_check.sh jobs/synthetic_phase3_3dgs_array.sh jobs/synthetic_phase3_ges_array.sh jobs/synthetic_phase3_drk_array.sh
 python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT"
 python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT" --verify-only

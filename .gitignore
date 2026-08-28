@@ -34,7 +34,13 @@ logs/
 external/
 
 # Slurm / experiment logs
-jobs/logs/
+jobs/logs/*
+!jobs/logs/phase3/
+!jobs/logs/phase3/setup/
+!jobs/logs/phase3/3dgs/
+!jobs/logs/phase3/ges/
+!jobs/logs/phase3/drk/
+!jobs/logs/phase3/*/.gitkeep
 *.out
 *.err
 *.log

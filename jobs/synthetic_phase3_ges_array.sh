@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
-#SBATCH --output=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/synthetic_ges_%A_%a.out
-#SBATCH --error=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/synthetic_ges_%A_%a.err
+#SBATCH --output=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/phase3/ges/synthetic_ges_%A_%a.out
+#SBATCH --error=/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting/jobs/logs/phase3/ges/synthetic_ges_%A_%a.err
 
 set -eo pipefail
 
@@ -31,7 +31,7 @@ SCENE_ID=${SCENES[$SLURM_ARRAY_TASK_ID]}
 DATASET=$DATASET_ROOT/$SCENE_ID
 OUTPUT=$OUTPUT_ROOT/$SCENE_ID
 
-mkdir -p "$OUTPUT" "$PROJECT_ROOT/jobs/logs"
+mkdir -p "$OUTPUT" "$PROJECT_ROOT/jobs/logs/phase3/ges"
 
 module purge
 module load cuda/12.3

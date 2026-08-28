@@ -1,6 +1,6 @@
 # Paper-1 Experiment Status Ledger
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 ## Project Objective
 
@@ -147,7 +147,7 @@ Additional MiP-NeRF 360 scenes are lower priority for now because Garden, Bicycl
 
 ## Phase III — Controlled Synthetic Pilot
 
-Status: input-compatible and ready for V100-only pilot training arrays; no large synthetic training sweep has been launched from the repository setup.
+Status: TRAINING COMPLETE for the deterministic 9-scene x 3-method pilot. Final successful arrays completed 27/27 runs.
 
 - Dataset root: `datasets/synthetic/phase3_controlled_pilot/`
 - Design doc: `docs/synthetic_experiment_design.md`
@@ -155,8 +155,19 @@ Status: input-compatible and ready for V100-only pilot training arrays; no large
 - Input prep job: `jobs/synthetic_phase3_prepare.sh`
 - Loader check job: `jobs/synthetic_phase3_loader_check.sh`
 - GPU arrays: `jobs/synthetic_phase3_3dgs_array.sh`, `jobs/synthetic_phase3_ges_array.sh`, `jobs/synthetic_phase3_drk_array.sh`
+- Inventory script: `scripts/synthetic/inventory_phase3_outputs.py`
+- Inventory output root: `results/synthetic/phase3_controlled_pilot/`
 
-Loader status:
+Loader/training status:
+
+- Loader check `1254667` succeeded.
+- 3DGS final array `1254695`: 9/9 tasks successful.
+- GES final array `1254696`: 9/9 tasks successful.
+- DRK final array `1254698`: 9/9 tasks successful.
+- Earlier arrays `1254668`, `1254669`, and `1254675` were failed/mixed attempts and are superseded.
+- The inventory script scans the 9-scene manifest and verifies selected outputs for all three methods without deleting or modifying stale/partial directories.
+
+Loader assumptions:
 
 - 3DGS, GES, and DRK directly consume `transforms_train.json` and `transforms_test.json`.
 - The 24 train / 8 test split is preserved by the generated transform files and must not be recomputed with LLFF holdout rules.
@@ -164,10 +175,11 @@ Loader status:
 - DRK's inspected loader already uses `np.uint8` for this path.
 - All three loaders have been verified on `phase3_edge_sharpness_low_seed0000` to see 24 train cameras, 8 test cameras, aligned image paths, and the same deterministic `points3d.ply`.
 
-Hardware rule:
+Hardware/logging rule:
 
 - Synthetic GPU arrays are constrained to `gpu003,gpu004,gpu005` because the current CUDA extensions are built for Tesla V100 / `sm_70`.
 - P100 / `sm_60` nodes are incompatible with those V100-compiled extensions and should not be used for these jobs unless the extensions are rebuilt for the target architecture.
+- Future Phase-III Slurm logs are organized under `jobs/logs/phase3/setup/`, `jobs/logs/phase3/3dgs/`, `jobs/logs/phase3/ges/`, and `jobs/logs/phase3/drk/`.
 
 ## Checklist
 
@@ -176,6 +188,7 @@ Hardware rule:
 | Garden | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bicycle | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Room | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Synthetic Phase-III pilot | ✓ | ✓ | ✓ | n/a | pending | pending | pending |
 
 ## Garden Status
 
@@ -304,7 +317,7 @@ Cross-scene: `Garden/Bicycle/Room p32 specialization aggregation` = COMPLETE.
 
 Phase II: complexity-stratified reconstruction-error analysis is implemented and ready to run; controlled causal tests are still next.
 
-Phase III: controlled synthetic pilot inputs and V100-constrained training arrays are ready; no synthetic training sweep has been launched from this setup.
+Phase III: controlled synthetic pilot training is COMPLETE for 27/27 method-scene runs; run the inventory script before using the synthetic outputs for local analysis or interpretation.
 
 ## Experimental Safeguards / Interpretation Rules
 
