@@ -63,7 +63,7 @@ The accepted replacement high-curvature candidate is amplitude `0.30`. It is pro
 python scripts/synthetic/promote_corrected_curvature.py
 ```
 
-The promotion step copies `/tmp/phase3_curvature_validation_$USER/phase3_curvature_high_candidate_0p3_seed0000` to `datasets/synthetic/phase3_controlled_pilot/phase3_curvature_high_corrected_seed0000`, relabels metadata as curvature/high with `paraboloid_amplitude=0.30`, appends/updates the root manifest, writes deterministic `points3d.ply`, and validates 24 train views, 8 test views, finite rendered values, and foreground occupancy within `0.54 +/- 0.03`.
+If the temp source is missing because `/tmp` is node-local or was cleared, promotion regenerates the deterministic accepted `0.30` validation candidate before copying it into the canonical dataset. The promotion step then relabels metadata as curvature/high with `paraboloid_amplitude=0.30`, appends/updates the root manifest, writes deterministic `points3d.ply`, and validates 24 train views, 8 test views, finite rendered values, and foreground occupancy within `0.54 +/- 0.03`.
 
 The surface-normal path avoids invalid divide warnings by using masked `np.divide` operations and validating finite geometry, normals, and rendered images. Candidate validation exits nonzero if any generated geometry, normal, or image contains NaN/Inf.
 

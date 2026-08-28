@@ -45,7 +45,9 @@ Promotion command:
 python scripts/synthetic/promote_corrected_curvature.py
 ```
 
-The promotion script copies `/tmp/phase3_curvature_validation_$USER/phase3_curvature_high_candidate_0p3_seed0000`, updates metadata and manifests, runs the same deterministic input-preparation logic to write `points3d.ply`, and validates:
+By default, the promotion script first looks for `/tmp/phase3_curvature_validation_$USER/phase3_curvature_high_candidate_0p3_seed0000` and other matching `/tmp/phase3_curvature_validation_*/` candidates. If the temp candidate is unavailable, which can happen because `/tmp` is node-local, it regenerates the deterministic `0.30` candidate in the requested temp validation root before promotion. Use `--no-regenerate-source` if you want it to fail instead.
+
+The promotion script copies the accepted candidate, updates metadata and manifests, runs the same deterministic input-preparation logic to write `points3d.ply`, and validates:
 
 - 24 train views
 - 8 test views

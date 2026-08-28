@@ -21,11 +21,13 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import generate_controlled_pilot as generator
 import prepare_nerf_synthetic_inputs as input_prep
 
 DEST_SCENE_ID = "phase3_curvature_high_corrected_seed0000"
 SOURCE_SCENE_ID = "phase3_curvature_high_candidate_0p3_seed0000"
 INVALID_ORIGINAL_SCENE_ID = "phase3_curvature_high_seed0000"
+DEFAULT_CONFIG = Path("configs/synthetic/phase3_controlled_pilot.json")
 DEFAULT_DATASET_ROOT = Path("datasets/synthetic/phase3_controlled_pilot")
 DEFAULT_TARGET = 0.54
 DEFAULT_TOLERANCE = 0.03
@@ -57,6 +59,7 @@ def default_source() -> Path:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--source", type=Path, default=default_source())
     parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     parser.add_argument("--destination-scene-id", default=DEST_SCENE_ID)
@@ -67,6 +70,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--foreground-tolerance", type=float, default=DEFAULT_TOLERANCE)
     parser.add_argument("--foreground-threshold", type=float, default=0.03)
     parser.add_argument("--validate-only", action="store_true", help="Validate the promoted scene without copying or preparing it.")
+    parser.add_argument(
+        "--no-regenerate-source",
+        action="store_true",
+        help="Fail if the accepted temp candidate is missing instead of regenerating it deterministically.",
+    )
     parser.add_argument(
         "--replace-destination",
         action="store_true",
@@ -92,6 +100,30 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def find_existing_source(project_root: Path, requested_source: Path) -> Path | None:
+    source = resolve_path(project_root, requested_source).resolve()
+    if source.exists():
+        return source
+    matches = sorted(Path("/tmp").glob(f"phase3_curvature_validation_*/{SOURCE_SCENE_ID}"))
+    existing = [path.resolve() for path in matches if path.is_dir()]
+    return existing[0] if existing else None
+
+
+def regenerate_source(project_root: Path, config_path: Path, requested_source: Path, parameter_value: float) -> Path:
+    source = resolve_path(project_root, requested_source).resolve()
+    output_root = source.parent
+    canonical_root = resolve_path(project_root, DEFAULT_DATASET_ROOT).resolve()
+    if output_root == canonical_root or canonical_root in output_root.parents:
+        raise ValueError(f"Refusing to regenerate validation candidate under canonical dataset root: {output_root}")
+    config = generator.load_config(resolve_path(project_root, config_path))
+    config = generator.curvature_candidate_config(config, [parameter_value])
+    generator.generate(config, output_root, tiny_test=False)
+    if not source.exists():
+        raise FileNotFoundError(f"Regenerated candidate did not appear at expected path: {source}")
+    print(f"Regenerated accepted source candidate at {source}")
+    return source
 
 
 def update_metadata(scene_dir: Path, source: Path, scene_id: str, parameter_value: float) -> dict[str, Any]:
@@ -216,6 +248,7 @@ def update_root_manifests(dataset_root: Path, row: dict[str, Any]) -> None:
 def validate_scene(
     scene_dir: Path,
     scene_id: str,
+    expected_parameter_value: float,
     foreground_target: float,
     foreground_tolerance: float,
     foreground_threshold: float,
@@ -225,8 +258,8 @@ def validate_scene(
         raise ValueError(f"metadata scene_id mismatch: {metadata.get('scene_id')} != {scene_id}")
     if metadata.get("sweep_family") != "curvature" or metadata.get("level") != "high":
         raise ValueError("Corrected scene metadata must be curvature/high")
-    if abs(float(metadata.get("parameter_value")) - DEFAULT_PARAMETER_VALUE) > 1e-9:
-        raise ValueError(f"Corrected scene parameter_value must be {DEFAULT_PARAMETER_VALUE}")
+    if abs(float(metadata.get("parameter_value")) - expected_parameter_value) > 1e-9:
+        raise ValueError(f"Corrected scene parameter_value must be {expected_parameter_value}")
     train_count = frame_count(scene_dir, "train")
     test_count = frame_count(scene_dir, "test")
     if train_count != 24 or test_count != 8:
@@ -264,13 +297,16 @@ def validate_scene(
 
 def promote(args: argparse.Namespace) -> PromotionValidation:
     project_root = args.project_root.resolve()
-    source = resolve_path(project_root, args.source).resolve()
+    source = find_existing_source(project_root, args.source)
     dataset_root = resolve_path(project_root, args.dataset_root).resolve()
     destination = dataset_root / args.destination_scene_id
     invalid_original = dataset_root / INVALID_ORIGINAL_SCENE_ID
 
-    if not source.exists():
-        raise FileNotFoundError(f"Accepted source candidate does not exist: {source}")
+    if source is None and not args.validate_only and not args.no_regenerate_source:
+        source = regenerate_source(project_root, args.config, args.source, args.parameter_value)
+    if source is None and not args.validate_only:
+        requested = resolve_path(project_root, args.source).resolve()
+        raise FileNotFoundError(f"Accepted source candidate does not exist: {requested}")
     if destination.exists():
         if not args.replace_destination and not args.validate_only:
             raise FileExistsError(
@@ -278,6 +314,7 @@ def promote(args: argparse.Namespace) -> PromotionValidation:
                 "Use --replace-destination only if you intend to replace this corrected scene."
             )
     if not args.validate_only:
+        assert source is not None
         if args.replace_destination and destination.exists():
             if destination.name != args.destination_scene_id:
                 raise RuntimeError(f"Refusing to replace unexpected path: {destination}")
@@ -294,6 +331,7 @@ def promote(args: argparse.Namespace) -> PromotionValidation:
     validation = validate_scene(
         destination,
         args.destination_scene_id,
+        args.parameter_value,
         args.foreground_target,
         args.foreground_tolerance,
         args.foreground_threshold,
