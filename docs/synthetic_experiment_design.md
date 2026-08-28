@@ -55,6 +55,10 @@ Diagnosis: the renderer intersects rays with an infinite paraboloid and the firs
 
 Smallest geometric fix: keep the same cameras, lighting, scene extent, appearance, resolution, and paraboloid equation, but choose the nearest positive ray-paraboloid root that is inside the finite square support. This preserves the bounded stimulus footprint while still increasing curvature from low to medium to high.
 
+A second candidate validation showed that the corrected `0.42` high-amplitude case still under-filled the view relative to the fixed target: low `0.02` foreground `0.5409`, medium `0.18` foreground `0.5443`, high `0.42` foreground `0.4785`. The occupancy tolerance must not be loosened. Instead, the validation mode supports a curvature-high amplitude sweep over `[0.22, 0.26, 0.30, 0.34, 0.38, 0.42]`, reports foreground occupancy and stimulus diagnostics for every candidate, and identifies the largest amplitude satisfying `0.54 +/- 0.03`.
+
+The surface-normal path avoids invalid divide warnings by using masked `np.divide` operations and validating finite geometry, normals, and rendered images. Candidate validation exits nonzero if any generated geometry, normal, or image contains NaN/Inf.
+
 Validation mode generates candidate corrected curvature scenes in a separate temporary location and audits foreground occupancy across all test views. It must pass before any corrected curvature training run is accepted:
 
 ```bash
@@ -62,11 +66,12 @@ python scripts/synthetic/generate_controlled_pilot.py \
   --config configs/synthetic/phase3_controlled_pilot.json \
   --validate-curvature-candidates \
   --output-root /tmp/phase3_curvature_validation_$USER \
+  --curvature-high-candidates 0.22,0.26,0.30,0.34,0.38,0.42 \
   --foreground-target 0.54 \
   --foreground-tolerance 0.03
 ```
 
-The validation writes `curvature_validation.csv` and `curvature_validation.json` under the temporary output root and exits nonzero if any curvature level is outside the target foreground-fraction band. This validation does not train any method and must not overwrite existing canonical Phase-III outputs.
+The validation writes `curvature_validation.csv`, `curvature_validation.json`, and `curvature_validation_summary.json` under the temporary output root and exits nonzero if low/medium controls fail or no high-curvature candidate lies inside the target foreground-fraction band. This validation does not train any method and must not overwrite existing canonical Phase-III outputs.
 
 ## Scene Structure
 
@@ -162,6 +167,7 @@ python scripts/synthetic/generate_controlled_pilot.py \
   --config configs/synthetic/phase3_controlled_pilot.json \
   --validate-curvature-candidates \
   --output-root /tmp/phase3_curvature_validation_$USER \
+  --curvature-high-candidates 0.22,0.26,0.30,0.34,0.38,0.42 \
   --foreground-target 0.54 \
   --foreground-tolerance 0.03
 ```
