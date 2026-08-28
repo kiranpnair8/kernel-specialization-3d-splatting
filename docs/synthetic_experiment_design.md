@@ -31,7 +31,7 @@ If any method fork requires a COLMAP directory instead, the conversion path is d
 
 `spatial_frequency` renders identical planar geometry with an analytic sinusoidal texture. Only the texture frequency changes; material amplitude and lighting stay fixed.
 
-`curvature` renders a fixed-color paraboloid-like surface. Only the geometry curvature amplitude changes.
+`curvature` renders a fixed-color bounded paraboloid-like surface. Only the geometry curvature amplitude changes.
 
 ## What Is Fixed
 
@@ -46,6 +46,27 @@ If any method fork requires a COLMAP directory instead, the conversion path is d
 - Background color: white.
 - Lighting direction and diffuse/ambient shading rule.
 - Scene scale and coordinate system.
+
+## Curvature Renderer Audit
+
+The initial Phase-III stimulus audit exposed a confound in the original curvature-high scene: `paraboloid_amplitude=0.42` produced foreground fraction about `0.0067`, while curvature low/medium were about `0.5409` and `0.5443`. The high-curvature image was therefore almost entirely background and is not a valid controlled comparison.
+
+Diagnosis: the renderer intersects rays with an infinite paraboloid and the first pilot implementation selected the nearest positive quadratic root before applying the finite square scene-extent test. At high curvature, many rays first intersect the unbounded paraboloid outside the intended finite square; those hits are rejected as out-of-bounds, and the alternate positive root that may lie inside the bounded stimulus is never considered. This makes foreground occupancy collapse as amplitude increases.
+
+Smallest geometric fix: keep the same cameras, lighting, scene extent, appearance, resolution, and paraboloid equation, but choose the nearest positive ray-paraboloid root that is inside the finite square support. This preserves the bounded stimulus footprint while still increasing curvature from low to medium to high.
+
+Validation mode generates candidate corrected curvature scenes in a separate temporary location and audits foreground occupancy across all test views. It must pass before any corrected curvature training run is accepted:
+
+```bash
+python scripts/synthetic/generate_controlled_pilot.py \
+  --config configs/synthetic/phase3_controlled_pilot.json \
+  --validate-curvature-candidates \
+  --output-root /tmp/phase3_curvature_validation_$USER \
+  --foreground-target 0.54 \
+  --foreground-tolerance 0.03
+```
+
+The validation writes `curvature_validation.csv` and `curvature_validation.json` under the temporary output root and exits nonzero if any curvature level is outside the target foreground-fraction band. This validation does not train any method and must not overwrite existing canonical Phase-III outputs.
 
 ## Scene Structure
 
@@ -132,6 +153,17 @@ Full pilot generation, no training:
 ```bash
 python scripts/synthetic/generate_controlled_pilot.py \
   --config configs/synthetic/phase3_controlled_pilot.json
+```
+
+Curvature-only candidate validation, no training and no canonical-output overwrite:
+
+```bash
+python scripts/synthetic/generate_controlled_pilot.py \
+  --config configs/synthetic/phase3_controlled_pilot.json \
+  --validate-curvature-candidates \
+  --output-root /tmp/phase3_curvature_validation_$USER \
+  --foreground-target 0.54 \
+  --foreground-tolerance 0.03
 ```
 
 Reproducible Slurm wrapper:

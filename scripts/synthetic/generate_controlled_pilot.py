@@ -134,6 +134,10 @@ def camera_rays(width: int, height: int, camera_angle_x: float, c2w: np.ndarray)
     return origins, dirs_world
 
 
+def in_scene_bounds(points: np.ndarray, extent: float) -> np.ndarray:
+    return (np.abs(points[..., 0]) <= extent) & (np.abs(points[..., 1]) <= extent)
+
+
 def intersect_plane(origins: np.ndarray, dirs: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     denom = dirs[..., 2]
     valid = np.abs(denom) > 1e-8
@@ -145,30 +149,52 @@ def intersect_plane(origins: np.ndarray, dirs: np.ndarray) -> tuple[np.ndarray, 
     return points, normals, valid
 
 
-def intersect_paraboloid(origins: np.ndarray, dirs: np.ndarray, amplitude: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def intersect_paraboloid(
+    origins: np.ndarray,
+    dirs: np.ndarray,
+    amplitude: float,
+    extent: float | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Intersect rays with z = amplitude * (x^2 + y^2).
+
+    When a finite scene extent is supplied, root selection is performed after checking
+    whether each candidate intersection lies inside the bounded square support. The
+    original pilot selected the nearest positive root before the extent check; for high
+    curvature, many rays first hit the unbounded paraboloid outside the intended square
+    and were then rejected as background even though the other root could be in-bounds.
+    """
     if abs(amplitude) < 1e-10:
         return intersect_plane(origins, dirs)
     ox, oy, oz = origins[..., 0], origins[..., 1], origins[..., 2]
     dx, dy, dz = dirs[..., 0], dirs[..., 1], dirs[..., 2]
-    a = -amplitude * (dx * dx + dy * dy)
-    b = dz - 2.0 * amplitude * (ox * dx + oy * dy)
-    c = oz - amplitude * (ox * ox + oy * oy)
-    disc = b * b - 4.0 * a * c
-    valid = disc >= 0.0
+    qa = -amplitude * (dx * dx + dy * dy)
+    qb = dz - 2.0 * amplitude * (ox * dx + oy * dy)
+    qc = oz - amplitude * (ox * ox + oy * oy)
+    disc = qb * qb - 4.0 * qa * qc
+    has_real_roots = disc >= 0.0
     sqrt_disc = np.sqrt(np.maximum(disc, 0.0))
-    denom = 2.0 * a
-    t1 = np.where(np.abs(denom) > 1e-10, (-b - sqrt_disc) / denom, -1.0)
-    t2 = np.where(np.abs(denom) > 1e-10, (-b + sqrt_disc) / denom, -1.0)
-    t_candidates = np.stack([t1, t2], axis=-1)
-    t_candidates = np.where(t_candidates > 0.0, t_candidates, np.inf)
-    t = np.min(t_candidates, axis=-1)
-    valid = valid & np.isfinite(t)
+    denom = 2.0 * qa
+    t1 = np.where(np.abs(denom) > 1e-10, (-qb - sqrt_disc) / denom, np.inf)
+    t2 = np.where(np.abs(denom) > 1e-10, (-qb + sqrt_disc) / denom, np.inf)
+    p1 = origins + dirs * t1[..., None]
+    p2 = origins + dirs * t2[..., None]
+    valid1 = has_real_roots & np.isfinite(t1) & (t1 > 0.0)
+    valid2 = has_real_roots & np.isfinite(t2) & (t2 > 0.0)
+    if extent is not None:
+        valid1 = valid1 & in_scene_bounds(p1, extent)
+        valid2 = valid2 & in_scene_bounds(p2, extent)
+    t1 = np.where(valid1, t1, np.inf)
+    t2 = np.where(valid2, t2, np.inf)
+    use_first = t1 <= t2
+    t = np.where(use_first, t1, t2)
+    valid = np.isfinite(t)
     points = origins + dirs * t[..., None]
     normals = np.stack(
         [-2.0 * amplitude * points[..., 0], -2.0 * amplitude * points[..., 1], np.ones_like(points[..., 2])],
         axis=-1,
     )
-    normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
+    normals_norm = np.linalg.norm(normals, axis=-1, keepdims=True)
+    normals = np.divide(normals, np.maximum(normals_norm, 1e-12))
     return points, normals, valid
 
 
@@ -211,7 +237,7 @@ def render_image(config: dict[str, Any], sweep_family: str, parameter_value: flo
     c2w = np.array(camera.transform_matrix, dtype=np.float64)
     origins, dirs = camera_rays(width, height, camera_angle_x, c2w)
     if sweep_family == "curvature":
-        points, normals, valid = intersect_paraboloid(origins, dirs, parameter_value)
+        points, normals, valid = intersect_paraboloid(origins, dirs, parameter_value, extent=extent)
         colors = curvature_color(points)
     else:
         points, normals, valid = intersect_plane(origins, dirs)
@@ -221,8 +247,7 @@ def render_image(config: dict[str, Any], sweep_family: str, parameter_value: flo
             colors = frequency_color(points, parameter_value, extent)
         else:
             raise ValueError(f"Unknown sweep family: {sweep_family}")
-    in_bounds = (np.abs(points[..., 0]) <= extent) & (np.abs(points[..., 1]) <= extent)
-    valid = valid & in_bounds
+        valid = valid & in_scene_bounds(points, extent)
     image = shade(colors, normals, valid, background)
     return (np.clip(image, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
@@ -319,6 +344,67 @@ def write_manifest(output_root: Path, rows: list[dict[str, Any]]) -> None:
         handle.write("\n")
 
 
+def foreground_fraction(image_path: Path, background: np.ndarray, threshold: float) -> float:
+    with Image.open(image_path) as image:
+        rgb = np.asarray(image.convert("RGB"), dtype=np.float64) / 255.0
+    distance = np.linalg.norm(rgb - background.reshape(1, 1, 3), axis=-1)
+    return float(np.mean(distance > threshold))
+
+
+def audit_curvature_foreground(
+    config: dict[str, Any],
+    output_root: Path,
+    target: float,
+    tolerance: float,
+    threshold: float,
+) -> list[dict[str, Any]]:
+    background = np.array(config["background_color"], dtype=np.float64)
+    seed = int(config["seed"])
+    rows: list[dict[str, Any]] = []
+    for level in ("low", "medium", "high"):
+        sid = scene_id("curvature", level, seed)
+        scene_dir = output_root / sid
+        test_images = sorted((scene_dir / "test").glob("*.png"))
+        if not test_images:
+            raise FileNotFoundError(f"No test images found for curvature validation scene: {scene_dir}")
+        fractions = [foreground_fraction(path, background, threshold) for path in test_images]
+        mean_fraction = float(np.mean(fractions))
+        within_tolerance = abs(mean_fraction - target) <= tolerance
+        rows.append(
+            {
+                "scene_id": sid,
+                "level": level,
+                "parameter_value": config["sweeps"]["curvature"]["levels"][level],
+                "test_view_count": len(test_images),
+                "mean_foreground_fraction": mean_fraction,
+                "min_foreground_fraction": float(np.min(fractions)),
+                "max_foreground_fraction": float(np.max(fractions)),
+                "target_foreground_fraction": target,
+                "tolerance": tolerance,
+                "accepted": within_tolerance,
+            }
+        )
+    return rows
+
+
+def write_curvature_validation(output_root: Path, rows: list[dict[str, Any]]) -> None:
+    csv_path = output_root / "curvature_validation.csv"
+    json_path = output_root / "curvature_validation.json"
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(rows, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def curvature_only_config(config: dict[str, Any]) -> dict[str, Any]:
+    result = json.loads(json.dumps(config))
+    result["sweeps"] = {"curvature": result["sweeps"]["curvature"]}
+    return result
+
+
 def generate(config: dict[str, Any], output_root: Path | None = None, tiny_test: bool = False) -> list[dict[str, Any]]:
     config = json.loads(json.dumps(config))
     if output_root is not None:
@@ -352,8 +438,42 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=None)
     parser.add_argument("--tiny-test", action="store_true", help="Generate one tiny scene for validation only.")
+    parser.add_argument(
+        "--validate-curvature-candidates",
+        action="store_true",
+        help="Generate only candidate curvature scenes in a temporary output root and require matched foreground occupancy.",
+    )
+    parser.add_argument("--foreground-target", type=float, default=0.54)
+    parser.add_argument("--foreground-tolerance", type=float, default=0.03)
+    parser.add_argument("--foreground-threshold", type=float, default=0.03)
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.validate_curvature_candidates:
+        config = curvature_only_config(config)
+        output_root = args.output_root or Path("/tmp/phase3_curvature_validation")
+        generate(config, output_root, tiny_test=False)
+        root = resolve_path(output_root)
+        rows = audit_curvature_foreground(
+            config,
+            root,
+            target=args.foreground_target,
+            tolerance=args.foreground_tolerance,
+            threshold=args.foreground_threshold,
+        )
+        write_curvature_validation(root, rows)
+        accepted = all(bool(row["accepted"]) for row in rows)
+        for row in rows:
+            print(
+                f"curvature {row['level']}: foreground={row['mean_foreground_fraction']:.4f} "
+                f"target={row['target_foreground_fraction']:.4f} accepted={row['accepted']}"
+            )
+        print(f"Wrote {root / 'curvature_validation.csv'}")
+        print(f"Wrote {root / 'curvature_validation.json'}")
+        if not accepted:
+            print("Curvature validation failed: foreground occupancy is outside tolerance.")
+            return 1
+        print("Curvature validation accepted: all levels are within tolerance.")
+        return 0
     generate(config, args.output_root, tiny_test=args.tiny_test)
     return 0
 
