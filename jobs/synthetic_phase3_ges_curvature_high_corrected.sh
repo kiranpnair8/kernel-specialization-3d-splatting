@@ -2,7 +2,7 @@
 #SBATCH --job-name=synthetic-ges-curv-corrected
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --nodelist=gpu003,gpu004,gpu005
+#SBATCH --nodelist=gpu004
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
