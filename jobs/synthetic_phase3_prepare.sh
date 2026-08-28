@@ -24,8 +24,8 @@ set -u
 export TMPDIR=${TMPDIR:-/tmp}
 
 python --version
-python -m compileall scripts/synthetic/generate_controlled_pilot.py scripts/synthetic/prepare_nerf_synthetic_inputs.py scripts/synthetic/inventory_phase3_outputs.py scripts/synthetic/cleanup_phase3_outputs.py scripts/synthetic/evaluate_phase3_results.py scripts/synthetic/audit_phase3_stimuli.py
-bash -n jobs/synthetic_phase3_prepare.sh jobs/synthetic_phase3_loader_check.sh jobs/synthetic_phase3_3dgs_array.sh jobs/synthetic_phase3_ges_array.sh jobs/synthetic_phase3_drk_array.sh
+python -m compileall scripts/synthetic/generate_controlled_pilot.py scripts/synthetic/prepare_nerf_synthetic_inputs.py scripts/synthetic/inventory_phase3_outputs.py scripts/synthetic/cleanup_phase3_outputs.py scripts/synthetic/evaluate_phase3_results.py scripts/synthetic/audit_phase3_stimuli.py scripts/synthetic/promote_corrected_curvature.py
+bash -n jobs/synthetic_phase3_prepare.sh jobs/synthetic_phase3_loader_check.sh jobs/synthetic_phase3_3dgs_array.sh jobs/synthetic_phase3_ges_array.sh jobs/synthetic_phase3_drk_array.sh jobs/synthetic_phase3_3dgs_curvature_high_corrected.sh jobs/synthetic_phase3_ges_curvature_high_corrected.sh jobs/synthetic_phase3_drk_curvature_high_corrected.sh
 
 /usr/bin/time -v python scripts/synthetic/generate_controlled_pilot.py \
   --config configs/synthetic/phase3_controlled_pilot.json

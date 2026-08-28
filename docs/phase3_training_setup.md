@@ -1,104 +1,61 @@
-# Phase III Synthetic Pilot Training Setup
+# Phase III Synthetic Training Setup
 
-## Loader Inspection Summary
+## Dataset Format
 
-The Phase-III pilot datasets are generated under:
+The Phase-III controlled pilot uses NeRF-synthetic style scene folders under:
 
 ```text
 datasets/synthetic/phase3_controlled_pilot/
 ```
 
-Each scene contains `transforms_train.json`, `transforms_test.json`, `train/*.png`, and `test/*.png`. The split is fixed by the generated transform files: 24 training views and 8 held-out test views.
+Each scene contains:
 
-Direct NeRF-synthetic loading is supported by all three current upstream pipelines:
+- `train/*.png`
+- `test/*.png`
+- `transforms_train.json`
+- `transforms_test.json`
+- `metadata.json`
+- deterministic `points3d.ply` after input preparation
 
-| Method | Loader result | Relevant behavior |
-| --- | --- | --- |
-| 3DGS | Direct `transforms_train.json` / `transforms_test.json` support | `scene/__init__.py` chooses the Blender loader when `transforms_train.json` exists; `--eval` preserves test frames from `transforms_test.json`. |
-| GES | Direct `transforms_train.json` / `transforms_test.json` support | The GES fork keeps the same Blender loader branch and preserves test frames under `--eval`. |
-| DRK | Direct `transforms_train.json` / `transforms_test.json` support | DRK chooses the Blender loader when `transforms_train.json` exists and preserves test frames under `--eval`; it also supports optional NSVF, which is not used here. |
+The generated `transforms_train.json` and `transforms_test.json` preserve the exact 24 train / 8 test split. Do not re-split these scenes with LLFF holdout rules.
 
-A COLMAP conversion is not required for this pilot. If a future local fork rejects the direct transforms format, the deterministic conversion path is to emit a COLMAP sparse model from the known analytic intrinsics/extrinsics while preserving the existing transform-defined split.
+## Loader Compatibility
 
-## NeRF Loader Compatibility Patch
+3DGS, GES, and DRK directly consume the NeRF-synthetic transform files. The loader check job verified 24 train and 8 test cameras for all three methods on `phase3_edge_sharpness_low_seed0000`.
 
-The current HPC NumPy/Pillow stack rejects signed int8 RGB arrays. The pinned 3DGS loader and pinned GES loader both construct synthetic RGB images with:
-
-```python
-Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
-```
-
-`np.byte` is signed int8, which can raise:
-
-```text
-TypeError: Cannot handle this data type: (1, 1, 3), |i1
-```
-
-DRK's inspected NeRF-synthetic loader already uses `np.uint8` in the corresponding Pillow conversion path. The tracked compatibility script below idempotently patches gitignored local upstream checkouts and then verifies that no legacy signed-byte conversion remains:
+3DGS and GES require the tracked compatibility patch script:
 
 ```bash
 python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT"
-python scripts/synthetic/patch_nerf_synthetic_loader_dtype.py --project-root "$PROJECT_ROOT" --verify-only
 ```
 
-This changes only the local external loader dtype cast from `np.byte` to `np.uint8`. It does not change camera handling, rendering logic, training hyperparameters, datasets, or method protocol. The loader-check job and all synthetic training arrays apply/verify this compatibility patch before using the loaders.
+The patch changes the NeRF-synthetic Pillow image cast in gitignored upstream checkouts from signed `np.byte` to `np.uint8`. DRK already uses a compatible dtype on this path.
 
-## Image And Path Conventions
+## Corrected High-Curvature Scene
 
-The generator writes frame paths without an image extension, for example:
-
-```json
-{"file_path": "./train/r_000"}
-```
-
-This matches the 3DGS and GES loaders, which append `.png`. DRK also accepts paths without an extension and appends `.png` when needed. The images are stored as:
+The original `phase3_curvature_high_seed0000` stimulus is preserved but invalid for controlled curvature analysis because its foreground occupancy collapsed. The accepted corrected high-curvature candidate uses `paraboloid_amplitude=0.30` and is promoted as a distinct scene:
 
 ```text
-train/r_000.png ... train/r_023.png
-test/r_000.png ... test/r_007.png
+datasets/synthetic/phase3_controlled_pilot/phase3_curvature_high_corrected_seed0000
 ```
 
-The train/test split must not be recomputed using LLFF holdout rules for synthetic scenes. It is encoded directly by `transforms_train.json` and `transforms_test.json`.
-
-## Deterministic Input Preparation
-
-Although direct loading works, all three loaders auto-create `points3d.ply` if it is missing. The defaults are method-specific and random; 3DGS/GES use a 100k random cloud, while DRK's public loader uses a smaller default. To avoid hidden initialization differences, run:
+Promotion command:
 
 ```bash
-python scripts/synthetic/prepare_nerf_synthetic_inputs.py \
-  --dataset-root datasets/synthetic/phase3_controlled_pilot \
-  --point-count 100000 \
-  --seed 0
+python scripts/synthetic/promote_corrected_curvature.py
 ```
 
-This validates every scene and writes a deterministic shared `points3d.ply` into each scene directory. It does not modify external method repositories or training code.
+The promotion script copies `/tmp/phase3_curvature_validation_$USER/phase3_curvature_high_candidate_0p3_seed0000`, updates metadata and manifests, runs the same deterministic input-preparation logic to write `points3d.ply`, and validates:
 
-## Compatibility Check
+- 24 train views
+- 8 test views
+- foreground fraction within `0.54 +/- 0.03`
+- finite rendered image values
+- deterministic `points3d.ply` exists
 
-Before launching training arrays, validate one pilot scene through the actual method loaders:
+## Training Jobs
 
-```bash
-sbatch jobs/synthetic_phase3_loader_check.sh
-```
-
-The check targets:
-
-```text
-phase3_edge_sharpness_low_seed0000
-```
-
-It verifies that each method sees 24 train cameras and 8 test cameras through its Blender/NeRF-synthetic loader.
-
-## Job Structure
-
-Preparation and validation:
-
-```bash
-sbatch jobs/synthetic_phase3_prepare.sh
-sbatch jobs/synthetic_phase3_loader_check.sh
-```
-
-Training/evaluation arrays:
+The original 9-scene pilot arrays are:
 
 ```bash
 sbatch jobs/synthetic_phase3_3dgs_array.sh
@@ -106,28 +63,20 @@ sbatch jobs/synthetic_phase3_ges_array.sh
 sbatch jobs/synthetic_phase3_drk_array.sh
 ```
 
-Each array has 9 tasks, one per pilot scene, capped at 3 concurrent tasks by `%3`.
+Train only the corrected high-curvature scene with:
 
-## Output Roots
-
-Requested output roots are:
-
-```text
-outputs/synthetic/phase3_controlled_pilot/3dgs/<scene_id>/
-outputs/synthetic/phase3_controlled_pilot/ges/<scene_id>/
-outputs/synthetic/phase3_controlled_pilot/drk/<scene_id>/
+```bash
+sbatch jobs/synthetic_phase3_3dgs_curvature_high_corrected.sh
+sbatch jobs/synthetic_phase3_ges_curvature_high_corrected.sh
+sbatch jobs/synthetic_phase3_drk_curvature_high_corrected.sh
 ```
 
-3DGS writes directly into the requested path. GES may create an internally suffixed or timestamped model path; the job resolves the actual output before rendering and metrics. DRK appends `_${gs_type}`, so the actual DRK model path is expected to be:
+The corrected-scene jobs use the same method protocols, budgets, environments, CUDA/compiler settings, and V100-only node restriction as the successful Phase-III arrays. They write new outputs under:
 
 ```text
-outputs/synthetic/phase3_controlled_pilot/drk/<scene_id>_DRK/
+outputs/synthetic/phase3_controlled_pilot/3dgs/phase3_curvature_high_corrected_seed0000
+outputs/synthetic/phase3_controlled_pilot/ges/phase3_curvature_high_corrected_seed0000
+outputs/synthetic/phase3_controlled_pilot/drk/phase3_curvature_high_corrected_seed0000
 ```
 
-## Protocol Notes
-
-The 3DGS and GES jobs keep the same `train -> render -> metrics` protocol used for Garden/Bicycle/Room. DRK keeps the same `train.py -> train.py --metric` protocol used for the real-scene DRK baselines.
-
-The documented DRK Mip-NeRF 360 flag `--is_unbounded` is intentionally omitted for the synthetic pilot because these scenes are bounded analytic objects, not unbounded 360 captures. This is a scene-format exception, not a classifier or methodology change.
-
-No large training sweep should be launched until the preparation job and loader compatibility job succeed.
+Each job refuses to start if its requested corrected output directory already exists and is non-empty.

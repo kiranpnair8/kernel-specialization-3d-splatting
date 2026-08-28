@@ -57,6 +57,14 @@ Smallest geometric fix: keep the same cameras, lighting, scene extent, appearanc
 
 A second candidate validation showed that the corrected `0.42` high-amplitude case still under-filled the view relative to the fixed target: low `0.02` foreground `0.5409`, medium `0.18` foreground `0.5443`, high `0.42` foreground `0.4785`. The occupancy tolerance must not be loosened. Instead, the validation mode supports a curvature-high amplitude sweep over `[0.22, 0.26, 0.30, 0.34, 0.38, 0.42]`, reports foreground occupancy and stimulus diagnostics for every candidate, and identifies the largest amplitude satisfying `0.54 +/- 0.03`.
 
+The accepted replacement high-curvature candidate is amplitude `0.30`. It is promoted as a distinct canonical scene named `phase3_curvature_high_corrected_seed0000`, leaving the original invalid `phase3_curvature_high_seed0000` untouched for provenance. Promotion is handled by:
+
+```bash
+python scripts/synthetic/promote_corrected_curvature.py
+```
+
+The promotion step copies `/tmp/phase3_curvature_validation_$USER/phase3_curvature_high_candidate_0p3_seed0000` to `datasets/synthetic/phase3_controlled_pilot/phase3_curvature_high_corrected_seed0000`, relabels metadata as curvature/high with `paraboloid_amplitude=0.30`, appends/updates the root manifest, writes deterministic `points3d.ply`, and validates 24 train views, 8 test views, finite rendered values, and foreground occupancy within `0.54 +/- 0.03`.
+
 The surface-normal path avoids invalid divide warnings by using masked `np.divide` operations and validating finite geometry, normals, and rendered images. Candidate validation exits nonzero if any generated geometry, normal, or image contains NaN/Inf.
 
 Validation mode generates candidate corrected curvature scenes in a separate temporary location and audits foreground occupancy across all test views. It must pass before any corrected curvature training run is accepted:
@@ -95,7 +103,7 @@ datasets/synthetic/phase3_controlled_pilot/
     test/r_000.png
 ```
 
-The pilot has `3 sweep families x 3 levels x 1 seed = 9 scenes`.
+The pilot has `3 sweep families x 3 levels x 1 seed = 9 scenes`. The corrected high-curvature scene is an additional distinct scene used to replace the invalid curvature-high condition in downstream corrected analyses.
 
 ## Manifest Fields
 
@@ -170,6 +178,20 @@ python scripts/synthetic/generate_controlled_pilot.py \
   --curvature-high-candidates 0.22,0.26,0.30,0.34,0.38,0.42 \
   --foreground-target 0.54 \
   --foreground-tolerance 0.03
+```
+
+Promote the accepted corrected high-curvature scene, no training:
+
+```bash
+python scripts/synthetic/promote_corrected_curvature.py
+```
+
+Train only the corrected high-curvature scene after promotion:
+
+```bash
+sbatch jobs/synthetic_phase3_3dgs_curvature_high_corrected.sh
+sbatch jobs/synthetic_phase3_ges_curvature_high_corrected.sh
+sbatch jobs/synthetic_phase3_drk_curvature_high_corrected.sh
 ```
 
 Reproducible Slurm wrapper:
