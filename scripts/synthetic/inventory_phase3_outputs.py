@@ -18,6 +18,19 @@ FINAL_SUCCESSFUL_ARRAYS = {"3dgs": "1254695", "ges": "1254696", "drk": "1254698"
 SUPERSEDED_ARRAYS = ["1254668", "1254669", "1254675"]
 LOADER_CHECK_JOB = "1254667"
 
+INVALID_CURVATURE_HIGH_SCENE_ID = "phase3_curvature_high_seed0000"
+CORRECTED_CURVATURE_HIGH_SCENE_ID = "phase3_curvature_high_corrected_seed0000"
+CURVATURE_HIGH_EXCLUSION_REASON = (
+    "excluded because the amplitude-0.42 stimulus was invalidated by the stimulus audit: "
+    "foreground occupancy collapsed and confounded the curvature sweep"
+)
+CORRECTED_CURVATURE_HIGH_PARAMETER_VALUE = "0.30"
+CORRECTED_CURVATURE_HIGH_OUTPUTS = {
+    "3dgs": "phase3_curvature_high_corrected_seed0000",
+    "ges": "phase3_curvature_high_corrected_seed0000_00_2026-08-28--17-36-53",
+    "drk": "phase3_curvature_high_corrected_seed0000_DRK",
+}
+
 
 @dataclass
 class CandidateStatus:
@@ -105,6 +118,86 @@ def load_manifest(dataset_root: Path) -> list[dict[str, Any]]:
         if isinstance(data, list):
             return data
     raise FileNotFoundError(f"No manifest.csv or manifest.json found under {dataset_root}")
+
+
+def corrected_curvature_high_row(dataset_root: Path, source_row: dict[str, Any] | None = None) -> dict[str, Any]:
+    row = dict(source_row or {})
+    row.update(
+        {
+            "scene_id": CORRECTED_CURVATURE_HIGH_SCENE_ID,
+            "sweep_family": "curvature",
+            "level": "high",
+            "parameter_value": CORRECTED_CURVATURE_HIGH_PARAMETER_VALUE,
+            "seed": row.get("seed", "0") or "0",
+            "train_view_count": row.get("train_view_count", "24") or "24",
+            "test_view_count": row.get("test_view_count", "8") or "8",
+            "resolution": row.get("resolution", "256x256") or "256x256",
+            "dataset_path": str(dataset_root / CORRECTED_CURVATURE_HIGH_SCENE_ID),
+            "canonical_replaces_scene_id": INVALID_CURVATURE_HIGH_SCENE_ID,
+        }
+    )
+    return row
+
+
+def canonicalize_phase3_rows(rows: list[dict[str, Any]], dataset_root: Path) -> list[dict[str, Any]]:
+    """Return the canonical 9-scene Phase-III manifest.
+
+    The original curvature/high amplitude-0.42 stimulus is kept on disk but is
+    excluded from canonical inventory/evaluation because its foreground
+    occupancy collapsed. The corrected amplitude-0.30 scene replaces it as the
+    canonical curvature/high condition.
+    """
+    canonical: list[dict[str, Any]] = []
+    corrected_seen = False
+    invalid_source_row: dict[str, Any] | None = None
+
+    for row in rows:
+        scene_id = str(row.get("scene_id", ""))
+        if scene_id == INVALID_CURVATURE_HIGH_SCENE_ID:
+            invalid_source_row = dict(row)
+            continue
+        if scene_id == CORRECTED_CURVATURE_HIGH_SCENE_ID:
+            canonical.append(corrected_curvature_high_row(dataset_root, row))
+            corrected_seen = True
+            continue
+        canonical.append(dict(row))
+
+    if not corrected_seen:
+        canonical.append(corrected_curvature_high_row(dataset_root, invalid_source_row))
+
+    canonical.sort(
+        key=lambda row: (
+            str(row.get("sweep_family", "")),
+            {"low": 0, "medium": 1, "high": 2}.get(str(row.get("level", "")), 99),
+            str(row.get("scene_id", "")),
+        )
+    )
+    return canonical
+
+
+def load_canonical_manifest(dataset_root: Path) -> list[dict[str, Any]]:
+    return canonicalize_phase3_rows(load_manifest(dataset_root), dataset_root)
+
+
+def canonicalization_payload(dataset_root: Path) -> dict[str, Any]:
+    return {
+        "excluded_scenes": {
+            INVALID_CURVATURE_HIGH_SCENE_ID: {
+                "reason": CURVATURE_HIGH_EXCLUSION_REASON,
+                "original_parameter_value": "0.42",
+            }
+        },
+        "replacement_scenes": {
+            CORRECTED_CURVATURE_HIGH_SCENE_ID: {
+                "replaces_scene_id": INVALID_CURVATURE_HIGH_SCENE_ID,
+                "sweep_family": "curvature",
+                "level": "high",
+                "parameter_value": CORRECTED_CURVATURE_HIGH_PARAMETER_VALUE,
+                "dataset_path": str(dataset_root / CORRECTED_CURVATURE_HIGH_SCENE_ID),
+                "method_outputs": CORRECTED_CURVATURE_HIGH_OUTPUTS,
+            }
+        },
+    }
 
 
 def as_int(row: dict[str, Any], key: str, default: int) -> int:
@@ -210,8 +303,15 @@ def candidate_status(path: Path, method: str, expected_iteration: int, expected_
 
 
 def find_candidates(method_root: Path, scene_id: str) -> list[Path]:
-    if not method_root.exists():
+    if not method_root.exists() or scene_id == INVALID_CURVATURE_HIGH_SCENE_ID:
         return []
+    if scene_id == CORRECTED_CURVATURE_HIGH_SCENE_ID:
+        exact_name = CORRECTED_CURVATURE_HIGH_OUTPUTS.get(method_root.name)
+        if exact_name is None:
+            return []
+        exact_path = method_root / exact_name
+        return [exact_path] if exact_path.is_dir() else []
+
     candidates: dict[str, Path] = {}
     for path in [method_root / scene_id, method_root / f"{scene_id}_DRK"]:
         if path.is_dir():
@@ -261,6 +361,11 @@ def write_markdown(path: Path, payload: dict[str, Any], records: list[InventoryR
         f"- Missing: {payload['summary']['missing_count']}",
         f"- Stale/partial extra candidates: {payload['summary']['stale_candidate_count']}",
         f"- Unknown output directories: {payload['summary']['unknown_output_count']}",
+        "",
+        "## Canonicalization",
+        "",
+        f"- `{INVALID_CURVATURE_HIGH_SCENE_ID}` is excluded from canonical Phase-III analysis: {CURVATURE_HIGH_EXCLUSION_REASON}.",
+        f"- `{CORRECTED_CURVATURE_HIGH_SCENE_ID}` is the canonical curvature/high scene with parameter value {CORRECTED_CURVATURE_HIGH_PARAMETER_VALUE}.",
         "",
         "## Outputs",
         "",
@@ -318,7 +423,8 @@ def main() -> int:
     dataset_root = resolve_path(project_root, args.dataset_root)
     output_root = resolve_path(project_root, args.output_root)
     results_dir = resolve_path(project_root, args.results_dir)
-    manifest = load_manifest(dataset_root)
+    raw_manifest = load_manifest(dataset_root)
+    manifest = canonicalize_phase3_rows(raw_manifest, dataset_root)
     scene_ids = {str(row["scene_id"]) for row in manifest}
 
     records: list[InventoryRecord] = []
@@ -381,7 +487,9 @@ def main() -> int:
         "manifest_path": rel((dataset_root / "manifest.csv") if (dataset_root / "manifest.csv").exists() else (dataset_root / "manifest.json"), project_root),
         "output_root": rel(output_root, project_root),
         "results_dir": rel(results_dir, project_root),
+        "canonicalization": canonicalization_payload(dataset_root),
         "expected": {
+            "raw_manifest_scene_count": len(raw_manifest),
             "scene_count": len(manifest),
             "method_count": len(METHODS),
             "methods": list(METHODS),
