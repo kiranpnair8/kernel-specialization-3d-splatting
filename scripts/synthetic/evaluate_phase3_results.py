@@ -409,6 +409,12 @@ def write_findings(path: Path, results: list[Phase3Result], pairwise_rows: list[
         "",
         "This file reports measured outputs from the completed Phase-III controlled synthetic pilot. It does not make causal or speculative claims.",
         "",
+        "## Provenance",
+        "",
+        f"- `{inventory.INVALID_CURVATURE_HIGH_SCENE_ID}` was invalidated by the stimulus audit because the amplitude-0.42 curvature-high condition collapsed foreground occupancy and confounded the curvature sweep.",
+        f"- `{inventory.CORRECTED_CURVATURE_HIGH_SCENE_ID}` replaces it as the canonical curvature/high condition with parameter value {inventory.CORRECTED_CURVATURE_HIGH_PARAMETER_VALUE}.",
+        "- Training was not rerun by this evaluation script; it reads the canonical corrected outputs selected by the inventory logic.",
+        "",
         "## Coverage",
         "",
         f"- Method-scene records: {len(results)}",
@@ -439,7 +445,6 @@ def write_findings(path: Path, results: list[Phase3Result], pairwise_rows: list[
             "## Notes",
             "",
             "- Canonical runs are selected through `scripts/synthetic/inventory_phase3_outputs.py`.",
-            "- Training was not rerun by this evaluation script.",
             "- Canonical outputs are read only.",
             f"- Pairwise delta rows: {len(pairwise_rows)}.",
             f"- Bootstrap CI rows: {len(bootstrap_rows)}.",
@@ -454,7 +459,7 @@ def main() -> int:
     dataset_root = resolve_path(project_root, args.dataset_root)
     output_root = resolve_path(project_root, args.output_root)
     results_dir = resolve_path(project_root, args.results_dir)
-    manifest = inventory.load_manifest(dataset_root)
+    manifest = inventory.load_canonical_manifest(dataset_root)
 
     selected_paths: dict[tuple[str, str], Path] = {}
     results: list[Phase3Result] = []
@@ -529,6 +534,7 @@ def main() -> int:
         "factor_summary_count": len(factor_rows),
         "per_view_metric_count": len(per_view_rows),
         "bootstrap_ci_count": len(bootstrap_rows),
+        "canonicalization": inventory.canonicalization_payload(dataset_root),
         "plot_paths": plot_paths,
     }
     write_json(results_dir / "phase3_evaluation_manifest.json", manifest_payload)
