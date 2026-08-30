@@ -216,10 +216,6 @@ def generate_scene(
 
 
 def read_existing_manifest(root: Path) -> list[dict[str, Any]]:
-    try:
-        return pilot.load_config  # type: ignore[return-value]
-    except Exception:
-        pass
     csv_path = root / "manifest.csv"
     json_path = root / "manifest.json"
     if csv_path.exists():
