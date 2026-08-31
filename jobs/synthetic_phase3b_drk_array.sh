@@ -1,8 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=phase3b-drk
 #SBATCH --partition=gpu
-#SBATCH --nodes=1
-#SBATCH --nodelist=gpu[003-005]
+#SBATCH --nodelist=gpu006
 #SBATCH --gres=gpu:1
 #SBATCH --array=0-35%3
 #SBATCH --cpus-per-task=4
