@@ -171,6 +171,7 @@ After the seed 1-4 trainings finish, rerun inventory and evaluation:
 python scripts/synthetic/inventory_phase3_outputs.py --fail-on-incomplete
 python scripts/synthetic/evaluate_phase3_results.py
 python scripts/synthetic/analyze_phase3_seed_statistics.py
+python scripts/synthetic/analyze_phase3_seed_interactions.py
 ```
 
-For Phase III-B inference, independent scene seeds are the primary experimental units. Use `phase3_seed_condition_summary.csv/json` for per-condition mean and SD across seeds and `phase3_seed_paired_delta_summary.csv/json` for paired method deltas across matched seeds. View-level bootstrap intervals from `evaluate_phase3_results.py` remain secondary diagnostics, not independent replication.
+For Phase III-B inference, independent scene seeds are the primary experimental units. Use `phase3_seed_condition_summary.csv/json` for per-condition mean and SD across seeds and `phase3_seed_paired_delta_summary.csv/json` for paired method deltas across matched seeds. Use `phase3_seed_interaction_tests.csv/json` and `phase3_seed_interaction_findings.md` to test whether pairwise method gaps change across low/medium/high factor levels with matched seeds. View-level bootstrap intervals from `evaluate_phase3_results.py` remain secondary diagnostics, not independent replication.
