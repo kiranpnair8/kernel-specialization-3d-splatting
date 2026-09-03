@@ -38,6 +38,12 @@ def helper_replacement() -> Replacement:
     return Replacement(old=old, new=new, marker="def enforce_max_primitives")
 
 
+def drk_helper_replacement() -> Replacement:
+    old = "from arguments import ModelParams, PipelineParams, OptimizationParams\nfrom utils.general_utils import line_chart"
+    new = "from arguments import ModelParams, PipelineParams, OptimizationParams" + HELPER + "\nfrom utils.general_utils import line_chart"
+    return Replacement(old=old, new=new, marker="def enforce_max_primitives")
+
+
 def patches(project_root: Path) -> List[FilePatch]:
     return [
         FilePatch(
@@ -114,27 +120,29 @@ def patches(project_root: Path) -> List[FilePatch]:
             label="DRK train",
             relative_path="external/drk/train.py",
             replacements=[
-                helper_replacement(),
+                drk_helper_replacement(),
                 Replacement(
                     old="                        relocated, added, pruned = self.gaussians.mcmc_densify()\n                        if self.iteration % 1000 == 0:",
                     new="                        relocated, added, pruned = self.gaussians.mcmc_densify()\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)\n                        if self.iteration % 1000 == 0:",
-                    marker="enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                    marker="relocated, added, pruned = self.gaussians.mcmc_densify()\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 ),
                 Replacement(
                     old="                        self.gaussians.densify_and_prune(self.gaussians.densify_grad_threshold, self.gaussians.min_opacity_pruning, self.scene.cameras_extent, size_threshold)\n                        if mcmc_active:",
                     new="                        self.gaussians.densify_and_prune(self.gaussians.densify_grad_threshold, self.gaussians.min_opacity_pruning, self.scene.cameras_extent, size_threshold)\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)\n                        if mcmc_active:",
-                    marker="enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                    marker="self.gaussians.densify_and_prune(self.gaussians.densify_grad_threshold, self.gaussians.min_opacity_pruning, self.scene.cameras_extent, size_threshold)\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 ),
                 Replacement(
                     old="                            else:\n                                relocated, added, pruned = 0, 0, 0\n                            if self.iteration % 1000 == 0:",
                     new="                            else:\n                                relocated, added, pruned = 0, 0, 0\n                            enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)\n                            if self.iteration % 1000 == 0:",
-                    marker="enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                    marker="relocated, added, pruned = 0, 0, 0\n                            enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 ),
             ],
             smoke_markers=[
                 "def enforce_max_primitives",
                 "if max_primitives is None or int(max_primitives) <= 0:",
-                "enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                "relocated, added, pruned = self.gaussians.mcmc_densify()\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                "self.gaussians.densify_and_prune(self.gaussians.densify_grad_threshold, self.gaussians.min_opacity_pruning, self.scene.cameras_extent, size_threshold)\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
+                "relocated, added, pruned = 0, 0, 0\n                            enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
             ],
         ),
     ]
