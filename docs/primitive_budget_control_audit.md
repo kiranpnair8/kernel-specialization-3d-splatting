@@ -22,8 +22,7 @@ Recorded final primitive counts from tracked documentation:
 | --- | ---: | ---: | ---: |
 | Garden | 4,146,866 | 2,709,992 | 614,345 |
 | Bicycle | 4,925,950 | 2,773,438 | 1,578,713 |
-
-Room baselines are marked complete in `docs/experiment_status.md`, but the tracked ledger does not record canonical Room primitive counts.
+| Room | 1,314,498 | 777,374 | 259,045 |
 
 ## 3DGS
 
@@ -100,7 +99,7 @@ Implementation inspected: `ajhamdi/ges-splatting` commit `c05fc7dbb22e270a5a6f49
 
 ### Initial Primitive-count Initialization
 
-GES initializes one generalized/Laplacian primitive per point in the input point cloud. `train_ges.py` constructs `LaplacianModel(dataset.sh_degree)`, and `Scene` initializes it from `scene_info.point_cloud`. `LaplacianModel.create_from_pcd` creates `_xyz`, features, scale, rotation, opacity, and a learnable `_shape` tensor from the same input point set. The initial primitive count is therefore the input point-cloud size.
+GES initializes one generalized/Laplian primitive per point in the input point cloud. `train_ges.py` constructs `LaplacianModel(dataset.sh_degree)`, and `Scene` initializes it from `scene_info.point_cloud`. `LaplacianModel.create_from_pcd` creates `_xyz`, features, scale, rotation, opacity, and a learnable `_shape` tensor from the same input point set. The initial primitive count is therefore the input point-cloud size.
 
 ### Densification / Splitting / Cloning Mechanism
 
@@ -289,23 +288,74 @@ What cannot be done cleanly without code changes:
 
 Scientific interpretation: capacity matching by threshold twiddling alone would be weak because threshold changes alter each method's training dynamics in method-specific ways. A hard-budget intervention is cleaner for count control but is still a new budget-constrained variant, not the original baseline protocol.
 
-## Minimal Hard-budget Patch Design
+## Implemented Minimal Hard-budget Patch Design
 
-If needed, implement a tracked, idempotent patch script rather than directly committing changes under gitignored `external/`.
+Tracked installer: `scripts/setup/apply_primitive_budget_control.py`.
 
-Recommended patch shape:
+The installer patches the gitignored local upstream checkouts in place. It is idempotent and refuses to proceed if expected source anchors are absent. It does not commit or copy upstream code into this repository.
 
-1. Add `--max_primitives`, default `-1`, to each method's optimization parameters.
-2. Add one helper per upstream checkout, or a near-identical helper adapted to each model tensor layout: `enforce_max_primitives(max_primitives, score="opacity")`.
-3. Call it immediately after any operation that can increase primitive count:
-   - 3DGS: after `densify_and_prune`.
-   - GES: after `densify_and_prune` and after `size_prune` if desired for logging symmetry, though `size_prune` only decreases count.
-   - DRK: after standard `densify_and_prune`, after MCMC densify, and before final save.
-4. Use existing `prune_points` so optimizer states, gradient accumulators, and method-specific tensors remain consistent.
-5. Log before/after counts and selected score.
-6. Refuse to run if the expected source anchors are not found.
+Implemented intervention:
 
-Preferred first score: lowest opacity. It is available in all three methods and is the smallest cross-method code change. Contribution/visibility pruning is more defensible but more expensive and less symmetric unless carefully implemented for all three.
+1. Add `--max_primitives` to each method's optimization parameters, default `-1`.
+2. When `max_primitives > 0`, call `enforce_max_primitives(...)` immediately after operations that can increase primitive count.
+3. Prune exactly `count_before - max_primitives` primitives with the lowest current opacity.
+4. Reuse each method's existing `prune_points` implementation, preserving optimizer-state and method-specific tensor consistency.
+5. Log every enforcement event with iteration, count before, count after, and number pruned.
+6. Preserve exact default behavior when `--max_primitives=-1`.
+
+Patch command:
+
+```bash
+python scripts/setup/apply_primitive_budget_control.py --project-root "$PWD" --install --smoke-test
+```
+
+Smoke-test command:
+
+```bash
+python scripts/setup/apply_primitive_budget_control.py --project-root "$PWD" --smoke-test
+```
+
+The smoke test verifies that the CLI default is installed, the disabled `-1` path is present, expected cap-enforcement call sites are present, and a deterministic simulated densification event is pruned to the requested cap by lowest opacity.
+
+## Room 250k Budget-control Variant
+
+Status: configured only. Training has not been submitted from this repository task.
+
+Scene: MiP-NeRF 360 Room.
+
+Budget: `max_primitives=250000`.
+
+Natural Room primitive counts from saved baseline outputs:
+
+| Method | Natural Room final primitives | 250k cap as fraction of natural count |
+| --- | ---: | ---: |
+| 3DGS | 1,314,498 | 19.0% |
+| GES | 777,374 | 32.2% |
+| DRK | 259,045 | 96.5% |
+
+Why 250k: it is just below the natural DRK Room count while substantially constraining 3DGS and GES. This creates a small, deadline-conscious robustness probe of whether the Room local-complementarity pattern survives when all methods are forced into roughly the same primitive-count regime. The setting is intentionally a budget-controlled variant, not a replacement baseline.
+
+Training jobs:
+
+- `jobs/3dgs_room_budget250k.sh`
+- `jobs/ges_room_budget250k.sh`
+- `jobs/drk_room_budget250k.sh`
+
+Output roots:
+
+- `outputs/3dgs/room_budget250k`
+- `outputs/ges/room_budget250k` with GES timestamp suffix appended internally
+- `outputs/drk/room_budget250k_DRK`
+
+Launch commands, when ready:
+
+```bash
+sbatch jobs/3dgs_room_budget250k.sh
+sbatch jobs/ges_room_budget250k.sh
+sbatch jobs/drk_room_budget250k.sh
+```
+
+Interpretation rule: these runs introduce a hard opacity-pruning intervention that is not part of the original baseline implementations. They may be used as a representation-capacity robustness check, but should be reported separately from the standard 3DGS/GES/DRK baselines.
 
 ## Recommended Minimal Budget-Control Experiment
 
@@ -313,20 +363,16 @@ Goal: test whether the observed real-scene local complementarity is robust to re
 
 Recommended design:
 
-1. Use one representative real scene first: Room.
+1. Use Room only for the first capacity-control probe.
    - Rationale: Room has the largest observed p32 oracle relative MSE gain vs 3DGS in the tracked ledger (31.1564%) and the most balanced winner distribution among the three real scenes: 3DGS 41.7171%, GES 27.2448%, DRK 13.1509%, tie 17.8872%.
    - This makes it the most sensitive single-scene probe for whether capacity explains the local-complementarity signal.
-2. Train budget-controlled variants for 3DGS, GES, and DRK at two matched final budgets, not a large sweep.
-   - Suggested low budget: approximately the Room/DRK natural final count once recorded from the saved Room DRK model.
-   - Suggested medium budget: approximately the Room/GES natural final count once recorded.
-   - Avoid a high budget unless time permits, because 3DGS/GES high-budget runs are expensive and final count matching will be the bottleneck.
+2. Start with one matched hard cap: `250000` primitives.
+   - This is below the natural Room DRK count and strongly constrains 3DGS/GES.
+   - It minimizes new GPU training while still probing the central capacity confound.
 3. Preserve each method's standard optimization behavior as much as possible.
    - Keep iteration counts, losses, camera split, evaluation path, and method-specific rendering protocol fixed.
    - Only add the primitive-budget constraint and report it as a controlled-capacity variant.
-4. Prefer hard-cap patching over manual threshold tuning if making a capacity-control claim.
-   - Manual threshold tuning is acceptable only as an exploratory pilot, not as the main evidence.
-   - DRK's existing `--final_prune_target` can be used as a reference, but for symmetry the cleaner experiment is to apply the same hard-budget policy to all three.
-5. Evaluate with the already validated p32 local pipeline.
+4. Evaluate with the already validated p32 local pipeline.
    - Run alignment audit if outputs are regenerated into new directories.
    - Run p32 local comparison with maps/predictors disabled for speed.
    - Run characterization only if the local-comparison signal persists.
@@ -334,7 +380,7 @@ Recommended design:
 
 Scientifically defensible stopping rule:
 
-- If the same qualitative local-complementarity and descriptor-association patterns persist at both matched budgets in Room, capacity alone is unlikely to explain the observed Room signal.
-- If the signal collapses or reverses under matched budgets, Paper-1 should frame primitive-count/capacity as a major confound and keep the original real-scene conclusions observational.
+- If the same qualitative local-complementarity and descriptor-association patterns persist in Room under the 250k cap, capacity alone is unlikely to explain the observed Room signal.
+- If the signal collapses or reverses under the cap, Paper-1 should frame primitive-count/capacity as a major confound and keep the original real-scene conclusions observational.
 
-Do not start with all scenes. A single-scene, two-budget pilot is the smallest useful experiment. Expand to Garden/Bicycle only if the Room pilot is promising and time remains.
+Do not start with all scenes or a large budget sweep. A single-scene, one-budget pilot is the smallest useful experiment. Expand only if the Room pilot is promising and time remains.
