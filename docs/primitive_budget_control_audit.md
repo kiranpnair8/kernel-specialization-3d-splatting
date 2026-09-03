@@ -2,9 +2,9 @@
 
 Date: 2026-09-03
 
-Scope: read-only audit of how representation capacity and final primitive count can be controlled for the 3DGS, GES, and DRK implementations used in Paper-1. This document does not modify code, launch training, or reinterpret existing results.
+Scope: audit and setup record for controlling representation capacity and final primitive count in the 3DGS, GES, and DRK implementations used in Paper-1. The tracked repository contains only patch/setup tooling and Slurm wrappers; upstream implementation edits are applied locally to gitignored `external/` checkouts only when the patch installer is run.
 
-Provenance note: the local `external/` directory was not present in the Codex workspace inspected for this audit, consistent with the repository policy that `external/` is gitignored. Source-level conclusions below are based on the pinned/public upstream implementations and our tracked Slurm wrappers. 3DGS and GES were inspected at the commits recorded in `docs/project_plan_paper1.md`; DRK was inspected from the public VAST/CVMI DRK implementation that matches the command-line interface used by our wrappers (`train.py --gs_type DRK --kernel_density dense --cache_sort --is_unbounded`).
+Provenance note: the local `external/` directory was not present in the Codex workspace inspected for the initial audit, consistent with the repository policy that `external/` is gitignored. Source-level conclusions below are based on the pinned/public upstream implementations and our tracked Slurm wrappers. 3DGS and GES were inspected at the commits recorded in `docs/project_plan_paper1.md`; DRK was inspected from the public VAST/CVMI DRK implementation that matches the command-line interface used by our wrappers (`train.py --gs_type DRK --kernel_density dense --cache_sort --is_unbounded`).
 
 ## Completed Baseline Densification Settings
 
@@ -292,7 +292,7 @@ Scientific interpretation: capacity matching by threshold twiddling alone would 
 
 Tracked installer: `scripts/setup/apply_primitive_budget_control.py`.
 
-The installer patches the gitignored local upstream checkouts in place. It is idempotent and refuses to proceed if expected source anchors are absent. It does not commit or copy upstream code into this repository.
+The installer patches the gitignored local upstream checkouts in place. It is idempotent, can upgrade the first installed helper version, and refuses to proceed if expected source anchors are absent. It does not commit or copy upstream code into this repository.
 
 Implemented intervention:
 
@@ -300,8 +300,9 @@ Implemented intervention:
 2. When `max_primitives > 0`, call `enforce_max_primitives(...)` immediately after operations that can increase primitive count.
 3. Prune exactly `count_before - max_primitives` primitives with the lowest current opacity.
 4. Reuse each method's existing `prune_points` implementation, preserving optimizer-state and method-specific tensor consistency.
-5. Log every enforcement event with iteration, count before, count after, and number pruned.
-6. Preserve exact default behavior when `--max_primitives=-1`.
+5. For current 3DGS compatibility, provide a temporary same-length `tmp_radii` buffer when cap pruning is called after `densify_and_prune` has cleared `tmp_radii`; the helper restores it to `None` immediately after pruning.
+6. Log every enforcement event with iteration, count before, count after, and number pruned.
+7. Preserve exact default behavior when `--max_primitives=-1`.
 
 Patch command:
 
@@ -315,7 +316,7 @@ Smoke-test command:
 python scripts/setup/apply_primitive_budget_control.py --project-root "$PWD" --smoke-test
 ```
 
-The smoke test verifies that the CLI default is installed, the disabled `-1` path is present, expected cap-enforcement call sites are present, and a deterministic simulated densification event is pruned to the requested cap by lowest opacity.
+The smoke test verifies that the CLI default is installed, the disabled `-1` path is present, expected cap-enforcement call sites are present, the helper is `tmp_radii`-safe, and a deterministic simulated densification event is pruned to the requested cap by lowest opacity.
 
 ## Room 250k Budget-control Variant
 
