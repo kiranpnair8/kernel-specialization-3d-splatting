@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 
-HELPER = '''\n\n@torch.no_grad()\ndef enforce_max_primitives(gaussians, max_primitives, iteration):\n    """Prune lowest-opacity primitives if a hard primitive cap is exceeded."""\n    if max_primitives is None or int(max_primitives) <= 0:\n        return\n    max_primitives = int(max_primitives)\n    count_before = int(gaussians.get_xyz.shape[0])\n    if count_before <= max_primitives:\n        return\n    prune_count = count_before - max_primitives\n    opacity = gaussians.get_opacity.detach().squeeze(-1)\n    _, prune_idx = torch.topk(opacity, prune_count, largest=False)\n    prune_mask = torch.zeros(count_before, dtype=torch.bool, device=opacity.device)\n    prune_mask[prune_idx] = True\n    gaussians.prune_points(prune_mask)\n    count_after = int(gaussians.get_xyz.shape[0])\n    print(\n        f"[ITER {iteration}] max_primitives cap enforced: "\n        f"count_before={count_before} count_after={count_after} "\n        f"number_pruned={prune_count}"\n    )\n'''
+OLD_HELPER = '''\n\n@torch.no_grad()\ndef enforce_max_primitives(gaussians, max_primitives, iteration):\n    """Prune lowest-opacity primitives if a hard primitive cap is exceeded."""\n    if max_primitives is None or int(max_primitives) <= 0:\n        return\n    max_primitives = int(max_primitives)\n    count_before = int(gaussians.get_xyz.shape[0])\n    if count_before <= max_primitives:\n        return\n    prune_count = count_before - max_primitives\n    opacity = gaussians.get_opacity.detach().squeeze(-1)\n    _, prune_idx = torch.topk(opacity, prune_count, largest=False)\n    prune_mask = torch.zeros(count_before, dtype=torch.bool, device=opacity.device)\n    prune_mask[prune_idx] = True\n    gaussians.prune_points(prune_mask)\n    count_after = int(gaussians.get_xyz.shape[0])\n    print(\n        f"[ITER {iteration}] max_primitives cap enforced: "\n        f"count_before={count_before} count_after={count_after} "\n        f"number_pruned={prune_count}"\n    )\n'''
+
+HELPER = '''\n\n@torch.no_grad()\ndef enforce_max_primitives(gaussians, max_primitives, iteration):\n    """Prune lowest-opacity primitives if a hard primitive cap is exceeded."""\n    if max_primitives is None or int(max_primitives) <= 0:\n        return\n    max_primitives = int(max_primitives)\n    count_before = int(gaussians.get_xyz.shape[0])\n    if count_before <= max_primitives:\n        return\n    prune_count = count_before - max_primitives\n    opacity = gaussians.get_opacity.detach().squeeze(-1)\n    _, prune_idx = torch.topk(opacity, prune_count, largest=False)\n    prune_mask = torch.zeros(count_before, dtype=torch.bool, device=opacity.device)\n    prune_mask[prune_idx] = True\n\n    created_tmp_radii = False\n    if hasattr(gaussians, "tmp_radii") and getattr(gaussians, "tmp_radii", None) is None:\n        # Current 3DGS prune_points indexes tmp_radii; cap pruning runs after\n        # densify_and_prune has cleared it, so provide a temporary same-length\n        # buffer solely to keep the existing pruning path consistent.\n        gaussians.tmp_radii = torch.zeros(count_before, dtype=opacity.dtype, device=opacity.device)\n        created_tmp_radii = True\n    gaussians.prune_points(prune_mask)\n    if created_tmp_radii:\n        gaussians.tmp_radii = None\n\n    count_after = int(gaussians.get_xyz.shape[0])\n    print(\n        f"[ITER {iteration}] max_primitives cap enforced: "\n        f"count_before={count_before} count_after={count_after} "\n        f"number_pruned={prune_count}"\n    )\n'''
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,12 @@ def drk_helper_replacement() -> Replacement:
 
 
 def patches(project_root: Path) -> List[FilePatch]:
+    helper_markers = [
+        "def enforce_max_primitives",
+        "if max_primitives is None or int(max_primitives) <= 0:",
+        "created_tmp_radii = False",
+        "gaussians.tmp_radii = torch.zeros(count_before, dtype=opacity.dtype, device=opacity.device)",
+    ]
     return [
         FilePatch(
             label="3DGS arguments",
@@ -69,9 +77,7 @@ def patches(project_root: Path) -> List[FilePatch]:
                     marker="enforce_max_primitives(gaussians, opt.max_primitives, iteration)",
                 ),
             ],
-            smoke_markers=[
-                "def enforce_max_primitives",
-                "if max_primitives is None or int(max_primitives) <= 0:",
+            smoke_markers=helper_markers + [
                 "enforce_max_primitives(gaussians, opt.max_primitives, iteration)",
             ],
         ),
@@ -98,9 +104,7 @@ def patches(project_root: Path) -> List[FilePatch]:
                     marker="enforce_max_primitives(gaussians, opt.max_primitives, iteration)",
                 ),
             ],
-            smoke_markers=[
-                "def enforce_max_primitives",
-                "if max_primitives is None or int(max_primitives) <= 0:",
+            smoke_markers=helper_markers + [
                 "enforce_max_primitives(gaussians, opt.max_primitives, iteration)",
             ],
         ),
@@ -137,9 +141,7 @@ def patches(project_root: Path) -> List[FilePatch]:
                     marker="relocated, added, pruned = 0, 0, 0\n                            enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 ),
             ],
-            smoke_markers=[
-                "def enforce_max_primitives",
-                "if max_primitives is None or int(max_primitives) <= 0:",
+            smoke_markers=helper_markers + [
                 "relocated, added, pruned = self.gaussians.mcmc_densify()\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 "self.gaussians.densify_and_prune(self.gaussians.densify_grad_threshold, self.gaussians.min_opacity_pruning, self.scene.cameras_extent, size_threshold)\n                        enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
                 "relocated, added, pruned = 0, 0, 0\n                            enforce_max_primitives(self.gaussians, self.opt.max_primitives, self.iteration)",
@@ -148,12 +150,25 @@ def patches(project_root: Path) -> List[FilePatch]:
     ]
 
 
+def upgrade_helper_if_needed(text: str) -> tuple[str, bool]:
+    if "def enforce_max_primitives" not in text:
+        return text, False
+    if "created_tmp_radii = False" in text:
+        return text, False
+    if OLD_HELPER not in text:
+        raise RuntimeError(
+            "Primitive-budget helper is installed but does not match the known v1 helper. "
+            "Refusing to guess; inspect the upstream train file."
+        )
+    return text.replace(OLD_HELPER, HELPER, 1), True
+
+
 def apply_file_patch(project_root: Path, patch: FilePatch) -> bool:
     path = project_root / patch.relative_path
     if not path.exists():
         raise FileNotFoundError(f"{patch.label}: expected file does not exist: {path}")
     text = path.read_text(encoding="utf-8")
-    changed = False
+    text, changed = upgrade_helper_if_needed(text)
     for replacement in patch.replacements:
         if replacement.marker in text:
             continue
@@ -172,7 +187,7 @@ def apply_file_patch(project_root: Path, patch: FilePatch) -> bool:
 def install(project_root: Path) -> None:
     for patch in patches(project_root):
         changed = apply_file_patch(project_root, patch)
-        status = "patched" if changed else "already installed"
+        status = "patched/upgraded" if changed else "already installed"
         print(f"{patch.label}: {status}")
 
 
@@ -202,7 +217,7 @@ def smoke_test(project_root: Path) -> None:
         for failure in failures:
             print(f"FAIL: {failure}")
         raise SystemExit(1)
-    print("Primitive-budget smoke test passed: CLI default, disabled path, call sites, and cap simulation verified.")
+    print("Primitive-budget smoke test passed: CLI default, disabled path, tmp_radii-safe helper, call sites, and cap simulation verified.")
 
 
 def main(argv: Iterable[str] | None = None) -> int:
