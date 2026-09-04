@@ -1,0 +1,27 @@
+{
+  "scene": "room",
+  "gt_dir": "../outputs/3dgs/room_baseline/test/ours_30000/gt",
+  "methods": [
+    {
+      "name": "3dgs",
+      "render_dir": "../outputs/3dgs/room_budget250k/test/ours_30000/renders"
+    },
+    {
+      "name": "ges",
+      "render_dir": "../outputs/ges/room_budget250k_00_2026-09-03--13-45-13/test/ours_40000/renders"
+    },
+    {
+      "name": "drk",
+      "render_dir": "../outputs/drk/room_budget250k_DRK/metric/test",
+      "render_name_template": "render_{stem}.png"
+    }
+  ],
+  "patch_size": 32,
+  "stride": 16,
+  "sensitivity_stride_policy": "half_patch",
+  "tie_threshold_mse": 0.00001,
+  "generate_maps": false,
+  "run_predictors": false,
+  "results_dir": "../results/room/3dgs_vs_ges_vs_drk_budget250k_p32",
+  "interpretation_note": "Room matched-budget p32 evaluation. This budget-controlled variant caps each method at 250000 primitives and reuses the canonical Room local-comparison protocol. It is an observational capacity-control analysis and must not be interpreted as a baseline replacement or a controlled causal kernel-family comparison."
+}
