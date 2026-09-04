@@ -3,11 +3,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 from collections import deque
 from pathlib import Path
 import sys
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -31,10 +30,6 @@ BOX_COLORS = {
     "ges": (218, 87, 67),
     "drk": (62, 150, 91),
 }
-
-
-class Candidate(Tuple[object, ...]):
-    pass
 
 
 def require_columns(fieldnames: Iterable[str] | None, required: Iterable[str]) -> List[str]:
