@@ -63,13 +63,14 @@ CI_COLUMN_PAIRS = (
 CAPTION = (
     "Complete statistical audit of structure-conditioned pairwise reconstruction "
     "error trends. Spearman rho measures the patch-level monotonic association "
-    "between each ground-truth structural descriptor and pairwise Delta MSE. "
-    "Raw p-values and Benjamini--Hochberg FDR-adjusted p-values are reported for "
-    "completeness. Binned slopes summarize the direction of the median Delta MSE "
-    "trend across descriptor quantiles. Because spatial patches overlap, statistical "
-    "interpretation emphasizes view-clustered uncertainty and reproducibility across "
-    "independent scenes rather than treating individual patches as independent "
-    "replications."
+    "between each ground-truth structural descriptor and pairwise $\\Delta$MSE. "
+    "Raw and BH-FDR-adjusted $p$-values are reported for completeness. "
+    "Values shown as $<10^{-300}$ numerically underflowed to zero in "
+    "double-precision computation. Binned slopes summarize the direction of the "
+    "median $\\Delta$MSE trend across descriptor quantiles. Because spatial patches "
+    "overlap, these patch-level significance values are not treated as evidence "
+    "from independent samples; interpretation instead emphasizes view-clustered "
+    "uncertainty and consistency across independent scenes."
 )
 
 
@@ -136,6 +137,15 @@ def format_number(value: str, column: str) -> str:
     if abs_number < 1e-3 or abs_number >= 1e4:
         return f"{number:.3e}"
     return f"{number:.6g}"
+
+
+def format_pvalue(value: str, column: str) -> str:
+    number = numeric(value, column)
+    if number == 0.0:
+        return r"$<10^{-300}$"
+    mantissa_text, exponent_text = f"{number:.3e}".split("e")
+    exponent = int(exponent_text)
+    return rf"${mantissa_text}\times10^{{{exponent}}}$"
 
 
 def escape_latex(value: str) -> str:
@@ -240,8 +250,8 @@ def make_table(rows: list[dict[str, str]]) -> str:
                     [
                         COMPARISON_LABELS[comparison],
                         format_number(row["spearman_rho"], "spearman_rho"),
-                        format_number(row["spearman_p_value"], "spearman_p_value"),
-                        format_number(row["spearman_p_value_bh_fdr"], "spearman_p_value_bh_fdr"),
+                        format_pvalue(row["spearman_p_value"], "spearman_p_value"),
+                        format_pvalue(row["spearman_p_value_bh_fdr"], "spearman_p_value_bh_fdr"),
                         format_number(row["binned_median_delta_slope"], "binned_median_delta_slope"),
                     ]
                 )
@@ -264,7 +274,7 @@ def make_table(rows: list[dict[str, str]]) -> str:
         [
             r"\bottomrule",
             r"\end{tabular}",
-            r"\caption{" + escape_latex(CAPTION) + r"}",
+            r"\caption{" + CAPTION + r"}",
             r"\label{tab:q2_statistical_audit}",
             r"\end{table}",
             "",
