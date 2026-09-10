@@ -41,9 +41,9 @@ DESCRIPTOR_TITLES = {
     "edge_strength": "Edge Strength",
 }
 ROW_PANEL_LABELS = {
-    "mean_gradient_magnitude": "(a) Mean Gradient Magnitude",
-    "high_frequency_energy": "(b) High-Frequency Energy",
-    "edge_strength": "(c) Edge Strength",
+    "mean_gradient_magnitude": "(a)",
+    "high_frequency_energy": "(b)",
+    "edge_strength": "(c)",
 }
 
 COMPARISONS = ("ges_vs_3dgs", "drk_vs_3dgs", "ges_vs_drk")
@@ -336,10 +336,22 @@ def plot_figure(
                 ax.set_title(SCENE_TITLES[scene], pad=6, fontsize=9.2)
             if col_idx == 0:
                 ax.set_ylabel(
-                    ROW_PANEL_LABELS[descriptor],
+                    DESCRIPTOR_TITLES[descriptor],
                     labelpad=8,
                     fontsize=8.3,
                     fontweight="regular",
+                )
+                ax.text(
+                    0.018,
+                    0.955,
+                    ROW_PANEL_LABELS[descriptor],
+                    transform=ax.transAxes,
+                    ha="left",
+                    va="top",
+                    fontsize=8.4,
+                    fontweight="bold",
+                    color="0.1",
+                    zorder=5,
                 )
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
@@ -350,7 +362,7 @@ def plot_figure(
             ax.grid(False)
 
     fig.supxlabel("Descriptor Quantile (Low \u2192 High)", y=0.060, fontsize=9.5)
-    fig.supylabel("Median \u0394MSE", x=0.025, fontsize=9.5)
+    fig.supylabel("Median \u0394MSE", x=0.018, fontsize=9.5)
     fig.legend(
         legend_handles,
         legend_labels,
