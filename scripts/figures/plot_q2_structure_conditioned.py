@@ -40,6 +40,11 @@ DESCRIPTOR_TITLES = {
     "high_frequency_energy": "High-Frequency Energy",
     "edge_strength": "Edge Strength",
 }
+ROW_PANEL_LABELS = {
+    "mean_gradient_magnitude": "(a) Mean Gradient Magnitude",
+    "high_frequency_energy": "(b) High-Frequency Energy",
+    "edge_strength": "(c) Edge Strength",
+}
 
 COMPARISONS = ("ges_vs_3dgs", "drk_vs_3dgs", "ges_vs_drk")
 COMPARISON_LABELS = {
@@ -273,7 +278,7 @@ def plot_figure(
         {
             "font.family": "DejaVu Sans",
             "font.size": 8.5,
-            "axes.titlesize": 10,
+            "axes.titlesize": 9.2,
             "axes.labelsize": 9,
             "xtick.labelsize": 8,
             "ytick.labelsize": 8,
@@ -328,9 +333,14 @@ def plot_figure(
                     legend_labels.append(COMPARISON_LABELS[comparison])
 
             if row_idx == 0:
-                ax.set_title(SCENE_TITLES[scene], pad=8)
+                ax.set_title(SCENE_TITLES[scene], pad=6, fontsize=9.2)
             if col_idx == 0:
-                ax.set_ylabel(DESCRIPTOR_TITLES[descriptor], labelpad=9)
+                ax.set_ylabel(
+                    ROW_PANEL_LABELS[descriptor],
+                    labelpad=8,
+                    fontsize=8.3,
+                    fontweight="regular",
+                )
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.tick_params(axis="both", length=2.5, width=0.7)
@@ -339,19 +349,19 @@ def plot_figure(
             ax.yaxis.set_major_formatter(formatter)
             ax.grid(False)
 
-    fig.supxlabel("Structural Descriptor Quantile (Low \u2192 High)", y=0.065, fontsize=9.5)
-    fig.supylabel("Median Pairwise \u0394MSE", x=0.025, fontsize=9.5)
+    fig.supxlabel("Descriptor Quantile (Low \u2192 High)", y=0.060, fontsize=9.5)
+    fig.supylabel("Median \u0394MSE", x=0.025, fontsize=9.5)
     fig.legend(
         legend_handles,
         legend_labels,
         loc="lower center",
         ncol=3,
         frameon=False,
-        bbox_to_anchor=(0.54, 0.0),
+        bbox_to_anchor=(0.54, 0.008),
         handlelength=2.4,
         columnspacing=1.8,
     )
-    fig.subplots_adjust(left=0.13, right=0.985, top=0.92, bottom=0.18, wspace=0.28, hspace=0.34)
+    fig.subplots_adjust(left=0.13, right=0.985, top=0.91, bottom=0.155, wspace=0.28, hspace=0.22)
 
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
     output_png.parent.mkdir(parents=True, exist_ok=True)
