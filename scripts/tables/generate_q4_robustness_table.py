@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the main-paper Q4 robustness table.
+"""Generate the main-paper Q4 robustness table from saved result files.
 
-The script reads existing matched-capacity and sensitivity outputs only. It
-does not rerun experiments or modify result files.
+This script does not rerun experiments and does not contain numerical result
+constants. It validates the expected saved-result structure before writing the
+LaTeX table.
 """
 
 from __future__ import annotations
@@ -16,27 +17,15 @@ from typing import Any, Mapping
 
 
 SCENES = ("garden", "bicycle", "room")
-PATCH_SIZES = (32, 64, 128)
-TIE_THRESHOLD = 1e-5
-
-EXPECTED_CAPACITY = {
-    "natural": {
-        "non_3dgs_winner_pct": 40.3958,
-        "oracle_gain_vs_3dgs_pct": 31.1564,
-    },
-    "matched": {
-        "non_3dgs_winner_pct": 53.9209,
-        "oracle_gain_vs_3dgs_pct": 29.6920,
-    },
-}
-
-EXPECTED_SENSITIVITY = {
-    "garden": {32: 30.0461, 64: 25.7933, 128: 21.6346},
-    "bicycle": {32: 35.4703, 64: 29.9495, 128: 23.7368},
-    "room": {32: 40.3958, 64: 38.6385, 128: 36.1579},
-}
-
 SCENE_LABELS = {"garden": "Garden", "bicycle": "Bicycle", "room": "Room"}
+PATCH_SIZES = (32, 64, 128)
+TIE_THRESHOLDS = (0.0, 1e-5, 5e-5)
+SELECTED_TIE_THRESHOLD = 1e-5
+EXPECTED_STRIDES = {32: 16, 64: 32, 128: 64}
+
+
+class ValidationError(RuntimeError):
+    """Raised when a saved result file does not match the expected schema."""
 
 
 def repo_root() -> Path:
@@ -47,22 +36,32 @@ def build_parser() -> argparse.ArgumentParser:
     root = repo_root()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--room-natural-summary",
+        "--matched-comparison-json",
         type=Path,
-        default=root / "results" / "room" / "3dgs_vs_ges_vs_drk_p32" / "summary.json",
-        help="Natural Room p32 local comparison summary.json.",
+        default=(
+            root
+            / "results"
+            / "room"
+            / "3dgs_vs_ges_vs_drk_budget250k_p32"
+            / "baseline_comparison"
+            / "baseline_vs_budget250k_summary.json"
+        ),
+        help="Room natural-vs-budget250k comparison JSON.",
     )
     parser.add_argument(
-        "--room-budget-summary",
+        "--garden-sensitivity-csv",
         type=Path,
-        default=root / "results" / "room" / "3dgs_vs_ges_vs_drk_budget250k_p32" / "summary.json",
-        help="Matched 250k Room p32 local comparison summary.json.",
+        default=root / "results" / "garden" / "3dgs_vs_ges_vs_drk" / "sensitivity" / "sensitivity_summary.csv",
     )
     parser.add_argument(
-        "--sensitivity-root",
+        "--bicycle-sensitivity-csv",
         type=Path,
-        default=root / "results",
-        help="Root under which scene sensitivity_summary.csv files are searched.",
+        default=root / "results" / "bicycle" / "3dgs_vs_ges_vs_drk_p32" / "sensitivity" / "sensitivity_summary.csv",
+    )
+    parser.add_argument(
+        "--room-sensitivity-csv",
+        type=Path,
+        default=root / "results" / "room" / "3dgs_vs_ges_vs_drk_p32" / "sensitivity" / "sensitivity_summary.csv",
     )
     parser.add_argument(
         "--output",
@@ -70,232 +69,292 @@ def build_parser() -> argparse.ArgumentParser:
         default=root / "paper" / "tables" / "q4_robustness.tex",
         help="LaTeX output path.",
     )
-    parser.add_argument(
-        "--tolerance",
-        type=float,
-        default=5e-3,
-        help="Absolute percentage-point tolerance for validating extracted values.",
-    )
     return parser
 
 
 def read_json(path: Path) -> Any:
     if not path.exists():
-        raise FileNotFoundError(f"Required summary file not found: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+        raise FileNotFoundError(f"Required matched-capacity JSON not found: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
-        raise FileNotFoundError(f"Required CSV file not found: {path}")
+        raise FileNotFoundError(f"Required sensitivity CSV not found: {path}")
     with path.open("r", newline="", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValidationError(f"Sensitivity CSV has no data rows: {path}")
+    return rows
 
 
-def as_float(value: Any, name: str) -> float:
-    out = float(value)
+def require_mapping(value: Any, name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValidationError(f"Expected {name} to be an object/mapping, got {type(value).__name__}")
+    return value
+
+
+def require_key(mapping: Mapping[str, Any], key: str, source: str) -> Any:
+    if key not in mapping:
+        raise ValidationError(f"Missing required key {key!r} in {source}")
+    return mapping[key]
+
+
+def as_float(value: Any, source: str) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"Expected finite numeric value for {source}, got {value!r}") from exc
     if not math.isfinite(out):
-        raise ValueError(f"Non-finite value for {name}: {value}")
+        raise ValidationError(f"Expected finite numeric value for {source}, got {value!r}")
     return out
 
 
-def oracle_values(summary_path: Path) -> dict[str, float]:
-    summary = read_json(summary_path)
-    oracle = summary.get("oracle")
-    if not isinstance(oracle, Mapping):
-        raise ValueError(f"{summary_path} does not contain an oracle object.")
-    ges = as_float(oracle.get("ges_winner_fraction"), "ges_winner_fraction")
-    drk = as_float(oracle.get("drk_winner_fraction"), "drk_winner_fraction")
-    non_3dgs_pct = 100.0 * (ges + drk)
-
-    if "oracle_relative_improvement_pct_vs_3dgs" in oracle:
-        oracle_gain_pct = as_float(
-            oracle["oracle_relative_improvement_pct_vs_3dgs"],
-            "oracle_relative_improvement_pct_vs_3dgs",
-        )
-    else:
-        improvement = as_float(
-            oracle.get("oracle_improvement_mse_vs_3dgs"),
-            "oracle_improvement_mse_vs_3dgs",
-        )
-        mse_3dgs = as_float(oracle.get("3dgs_patch_mse"), "3dgs_patch_mse")
-        if mse_3dgs == 0.0:
-            raise ValueError(f"{summary_path} has zero 3DGS patch MSE.")
-        oracle_gain_pct = 100.0 * improvement / mse_3dgs
-
-    return {
-        "non_3dgs_winner_pct": non_3dgs_pct,
-        "oracle_gain_vs_3dgs_pct": oracle_gain_pct,
-    }
+def as_int(value: Any, source: str) -> int:
+    out = as_float(value, source)
+    if not out.is_integer():
+        raise ValidationError(f"Expected integer-like value for {source}, got {value!r}")
+    return int(out)
 
 
-def tie_matches(value: float, target: float = TIE_THRESHOLD) -> bool:
-    return math.isclose(value, target, rel_tol=0.0, abs_tol=1e-12)
-
-
-def find_sensitivity_summary(root: Path, scene: str) -> Path:
-    preferred = [
-        root / scene / "3dgs_vs_ges_vs_drk_p32" / "sensitivity" / "sensitivity_summary.csv",
-        root / scene / "3dgs_vs_ges_vs_drk" / "sensitivity" / "sensitivity_summary.csv",
-        root / scene / "3dgs_vs_ges_vs_drk_p32" / "sensitivity_summary.csv",
-    ]
-    for path in preferred:
-        if path.exists():
-            return path
-
-    scene_root = root / scene
-    candidates = sorted(scene_root.rglob("sensitivity_summary.csv")) if scene_root.exists() else []
-    if not candidates:
-        raise FileNotFoundError(f"No sensitivity_summary.csv found for scene {scene} under {root}")
-    if len(candidates) > 1:
-        formatted = "\n".join(f"  - {path}" for path in candidates)
-        raise RuntimeError(
-            f"Multiple sensitivity_summary.csv files found for scene {scene}; "
-            f"pass a narrower --sensitivity-root or remove ambiguity:\n{formatted}"
-        )
-    return candidates[0]
-
-
-def sensitivity_values(root: Path) -> tuple[dict[str, dict[int, float]], dict[str, Path]]:
-    output: dict[str, dict[int, float]] = {}
-    sources: dict[str, Path] = {}
-    for scene in SCENES:
-        path = find_sensitivity_summary(root, scene)
-        rows = read_csv(path)
-        sources[scene] = path
-        scene_values: dict[int, float] = {}
-        for patch_size in PATCH_SIZES:
-            matches = [
-                row
-                for row in rows
-                if int(float(row["patch_size"])) == patch_size
-                and tie_matches(float(row["tie_threshold_mse"]))
-            ]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"Expected one row for scene={scene}, patch_size={patch_size}, "
-                    f"tie_threshold_mse={TIE_THRESHOLD}; found {len(matches)} in {path}"
-                )
-            row = matches[0]
-            scene_values[patch_size] = 100.0 * as_float(
-                row["non_3dgs_winner_fraction"], "non_3dgs_winner_fraction"
-            )
-        output[scene] = scene_values
-    return output, sources
-
-
-def assert_close(name: str, observed: float, expected: float, tolerance: float) -> None:
-    if not math.isclose(observed, expected, rel_tol=0.0, abs_tol=tolerance):
-        raise ValueError(f"{name}: observed {observed:.6f}, expected {expected:.6f}")
-
-
-def validate(
-    natural: dict[str, float],
-    matched: dict[str, float],
-    sensitivity: dict[str, dict[int, float]],
-    tolerance: float,
-) -> None:
-    for key, expected in EXPECTED_CAPACITY["natural"].items():
-        assert_close(f"natural/{key}", natural[key], expected, tolerance)
-    for key, expected in EXPECTED_CAPACITY["matched"].items():
-        assert_close(f"matched/{key}", matched[key], expected, tolerance)
-    for scene, patch_values in EXPECTED_SENSITIVITY.items():
-        for patch_size, expected in patch_values.items():
-            assert_close(
-                f"sensitivity/{scene}/p{patch_size}",
-                sensitivity[scene][patch_size],
-                expected,
-                tolerance,
-            )
+def float_matches(value: Any, target: float, source: str, *, tol: float = 1e-12) -> bool:
+    return math.isclose(as_float(value, source), target, rel_tol=0.0, abs_tol=tol)
 
 
 def pct(value: float) -> str:
     return f"{value:.2f}"
 
 
-def make_table(natural: dict[str, float], matched: dict[str, float], sensitivity: dict[str, dict[int, float]]) -> str:
-    return "\n".join(
+def latex_row(*columns: str) -> str:
+    return " & ".join(columns) + r" \\"
+
+
+def label_for_matched_record(record: Mapping[str, Any]) -> str:
+    raw = str(record.get("label", "")).lower()
+    if "budget250k" in raw or "250k" in raw or "matched" in raw:
+        return "matched"
+    if "baseline" in raw or "natural" in raw:
+        return "natural"
+    raise ValidationError(
+        "Could not classify matched-comparison record label as natural or 250k: "
+        f"{record.get('label')!r}"
+    )
+
+
+def extract_matched_capacity(path: Path) -> dict[str, dict[str, float]]:
+    payload = require_mapping(read_json(path), str(path))
+    records_raw = require_key(payload, "records", str(path))
+    if not isinstance(records_raw, list):
+        raise ValidationError(f"Expected {path}: records to be a list")
+    if len(records_raw) != 2:
+        raise ValidationError(f"Expected exactly 2 matched-comparison records in {path}, got {len(records_raw)}")
+
+    records: dict[str, dict[str, float]] = {}
+    for index, raw_record in enumerate(records_raw):
+        record = require_mapping(raw_record, f"{path}: records[{index}]")
+        key = label_for_matched_record(record)
+        if key in records:
+            raise ValidationError(f"Duplicate matched-comparison record classified as {key!r} in {path}")
+
+        patch_size = as_int(require_key(record, "patch_size", f"{path}: {key}"), f"{path}: {key}.patch_size")
+        stride = as_int(require_key(record, "stride", f"{path}: {key}"), f"{path}: {key}.stride")
+        tie = require_key(record, "tie_threshold_mse", f"{path}: {key}")
+        if patch_size != 32:
+            raise ValidationError(f"Expected {key} patch_size=32 in {path}, got {patch_size}")
+        if stride != 16:
+            raise ValidationError(f"Expected {key} stride=16 in {path}, got {stride}")
+        if not float_matches(tie, SELECTED_TIE_THRESHOLD, f"{path}: {key}.tie_threshold_mse"):
+            raise ValidationError(f"Expected {key} tie_threshold_mse=1e-5 in {path}, got {tie!r}")
+
+        non_3dgs = as_float(
+            require_key(record, "non_3dgs_winner_fraction", f"{path}: {key}"),
+            f"{path}: {key}.non_3dgs_winner_fraction",
+        )
+        oracle_gain = as_float(
+            require_key(record, "oracle_relative_improvement_pct_vs_3dgs", f"{path}: {key}"),
+            f"{path}: {key}.oracle_relative_improvement_pct_vs_3dgs",
+        )
+        records[key] = {
+            "non_3dgs_winner_pct": 100.0 * non_3dgs,
+            "oracle_gain_vs_3dgs_pct": oracle_gain,
+            "patch_size": float(patch_size),
+            "stride": float(stride),
+            "tie_threshold_mse": as_float(tie, f"{path}: {key}.tie_threshold_mse"),
+        }
+
+    missing = {"natural", "matched"} - records.keys()
+    if missing:
+        raise ValidationError(f"Missing matched-capacity record(s) in {path}: {sorted(missing)}")
+    return records
+
+
+def scene_csv_paths(args: argparse.Namespace) -> dict[str, Path]:
+    return {
+        "garden": args.garden_sensitivity_csv,
+        "bicycle": args.bicycle_sensitivity_csv,
+        "room": args.room_sensitivity_csv,
+    }
+
+
+def validate_sensitivity_grid(rows: list[Mapping[str, str]], scene: str, path: Path) -> None:
+    seen: set[tuple[int, float]] = set()
+    for idx, row in enumerate(rows, start=2):
+        patch_size = as_int(require_key(row, "patch_size", f"{path}: line {idx}"), f"{path}: line {idx}.patch_size")
+        tie = as_float(require_key(row, "tie_threshold_mse", f"{path}: line {idx}"), f"{path}: line {idx}.tie_threshold_mse")
+        if patch_size not in PATCH_SIZES:
+            raise ValidationError(f"Unexpected patch_size for {scene} in {path} line {idx}: {patch_size}")
+        matched_ties = [target for target in TIE_THRESHOLDS if math.isclose(tie, target, rel_tol=0.0, abs_tol=1e-12)]
+        if len(matched_ties) != 1:
+            raise ValidationError(f"Unexpected tie_threshold_mse for {scene} in {path} line {idx}: {tie}")
+        key = (patch_size, matched_ties[0])
+        if key in seen:
+            raise ValidationError(f"Duplicate sensitivity condition for {scene} in {path}: {key}")
+        seen.add(key)
+
+    expected = {(patch_size, tie) for patch_size in PATCH_SIZES for tie in TIE_THRESHOLDS}
+    if seen != expected:
+        missing = sorted(expected - seen)
+        extra = sorted(seen - expected)
+        raise ValidationError(
+            f"Sensitivity grid mismatch for {scene} in {path}: missing={missing}, extra={extra}"
+        )
+
+
+def extract_sensitivity(paths: Mapping[str, Path]) -> dict[str, dict[int, dict[str, float]]]:
+    by_scene: dict[str, dict[int, dict[str, float]]] = {}
+    for scene, path in paths.items():
+        rows = read_csv(path)
+        validate_sensitivity_grid(rows, scene, path)
+        selected: dict[int, dict[str, float]] = {}
+        for patch_size in PATCH_SIZES:
+            matches = [
+                row
+                for row in rows
+                if as_int(row.get("patch_size"), f"{path}: patch_size") == patch_size
+                and float_matches(row.get("tie_threshold_mse"), SELECTED_TIE_THRESHOLD, f"{path}: tie_threshold_mse")
+            ]
+            if len(matches) != 1:
+                raise ValidationError(
+                    f"Expected exactly one selected sensitivity row for scene={scene}, "
+                    f"patch_size={patch_size}, tie_threshold_mse=1e-5 in {path}; found {len(matches)}"
+                )
+            row = matches[0]
+            stride = as_int(require_key(row, "stride", f"{path}: {scene} p{patch_size}"), f"{path}: {scene} p{patch_size}.stride")
+            expected_stride = EXPECTED_STRIDES[patch_size]
+            if stride != expected_stride:
+                raise ValidationError(
+                    f"Expected stride {expected_stride} for scene={scene}, patch_size={patch_size} in {path}; got {stride}"
+                )
+            non_3dgs = as_float(
+                require_key(row, "non_3dgs_winner_fraction", f"{path}: {scene} p{patch_size}"),
+                f"{path}: {scene} p{patch_size}.non_3dgs_winner_fraction",
+            )
+            oracle_gain = as_float(
+                require_key(row, "oracle_relative_improvement_pct_vs_3dgs", f"{path}: {scene} p{patch_size}"),
+                f"{path}: {scene} p{patch_size}.oracle_relative_improvement_pct_vs_3dgs",
+            )
+            selected[patch_size] = {
+                "stride": float(stride),
+                "tie_threshold_mse": SELECTED_TIE_THRESHOLD,
+                "non_3dgs_winner_pct": 100.0 * non_3dgs,
+                "oracle_gain_vs_3dgs_pct": oracle_gain,
+            }
+        by_scene[scene] = selected
+    return by_scene
+
+
+def latex_table(matched: Mapping[str, Mapping[str, float]], sensitivity: Mapping[str, Mapping[int, Mapping[str, float]]]) -> str:
+    lines = [
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\small",
+        r"\setlength{\tabcolsep}{4.5pt}",
+        r"\begin{tabular}{lcc}",
+        r"\toprule",
+        r"\multicolumn{3}{l}{\textbf{(A) Matched representation-capacity control --- Room}} \\",
+        r"\midrule",
+        r"Setting & Non-3DGS winners (\%) & Oracle gain vs. 3DGS (\%) \\",
+        r"\midrule",
+        latex_row("Natural", pct(matched["natural"]["non_3dgs_winner_pct"]), pct(matched["natural"]["oracle_gain_vs_3dgs_pct"])), 
+        latex_row("250k each", pct(matched["matched"]["non_3dgs_winner_pct"]), pct(matched["matched"]["oracle_gain_vs_3dgs_pct"])), 
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\vspace{0.45em}",
+        r"\begin{tabular}{lcccccc}",
+        r"\toprule",
+        r"\multicolumn{7}{l}{\textbf{(B) Spatial analysis scale sensitivity, $\tau=10^{-5}$}} \\",
+        r"\midrule",
+        r"& \multicolumn{3}{c}{Non-3DGS winners (\%)} & \multicolumn{3}{c}{Oracle gain vs. 3DGS (\%)} \\",
+        r"\cmidrule(lr){2-4}\cmidrule(lr){5-7}",
+        r"Scene & $p=32$ & $p=64$ & $p=128$ & $p=32$ & $p=64$ & $p=128$ \\",
+        r"\midrule",
+    ]
+    for scene in SCENES:
+        row = sensitivity[scene]
+        lines.append(
+            f"{SCENE_LABELS[scene]} & "
+            f"{pct(row[32]['non_3dgs_winner_pct'])} & {pct(row[64]['non_3dgs_winner_pct'])} & {pct(row[128]['non_3dgs_winner_pct'])} & "
+            f"{pct(row[32]['oracle_gain_vs_3dgs_pct'])} & {pct(row[64]['oracle_gain_vs_3dgs_pct'])} & {pct(row[128]['oracle_gain_vs_3dgs_pct'])} \\\\"
+        )
+    lines.extend(
         [
-            r"\begin{table}[t]",
-            r"\centering",
-            r"\small",
-            r"\setlength{\tabcolsep}{5pt}",
-            r"\begin{tabular}{llcc}",
-            r"\toprule",
-            r"\multicolumn{4}{l}{\textbf{(A) Matched representation capacity control --- Room}} \\",
-            r"\midrule",
-            r"Setting & Primitive budget & Non-3DGS winner (\%) & Oracle gain vs. 3DGS (\%) \\",
-            r"\midrule",
-            f"Natural & Natural & {pct(natural['non_3dgs_winner_pct'])} & {pct(natural['oracle_gain_vs_3dgs_pct'])} \\\\",
-            f"Matched & 250k each & {pct(matched['non_3dgs_winner_pct'])} & {pct(matched['oracle_gain_vs_3dgs_pct'])} \\\\",
-            r"\midrule",
-            r"\multicolumn{4}{l}{\textbf{(B) Spatial analysis scale sensitivity, $\tau=10^{-5}$}} \\",
-            r"\midrule",
-            r"Scene & $p=32$ & $p=64$ & $p=128$ \\",
-            r"\midrule",
-            *[
-                f"{SCENE_LABELS[scene]} & {pct(sensitivity[scene][32])} & "
-                f"{pct(sensitivity[scene][64])} & {pct(sensitivity[scene][128])} \\\\"
-                for scene in SCENES
-            ],
             r"\bottomrule",
             r"\end{tabular}",
             r"\caption{\textbf{Robustness of local cross-family specialization to representation capacity and spatial analysis scale.} "
-            r"(A) compares the natural Room setting with a strictly matched 250k-primitive budget for each family. "
-            r"(B) reports the fraction of patches won by a non-3DGS family across analysis patch sizes at $\tau=10^{-5}$. "
-            r"Specialization and post-hoc oracle headroom persist under matched capacity and increasingly coarse spatial analysis.}",
+            r"(A) compares the natural Room representation with a matched 250k-primitive budget for each family. "
+            r"(B) evaluates increasingly coarse local analysis at $\tau=10^{-5}$. "
+            r"Non-3DGS winner fractions and post-hoc oracle improvement relative to 3DGS remain nonzero across all evaluated settings.}",
             r"\label{tab:q4_robustness}",
-            r"\end{table}",
+            r"\end{table*}",
             "",
         ]
     )
+    return "\n".join(lines)
 
 
-def print_raw_values(
-    natural: dict[str, float],
-    matched: dict[str, float],
-    sensitivity: dict[str, dict[int, float]],
-    sources: dict[str, Path],
-    natural_path: Path,
-    matched_path: Path,
-) -> None:
-    print("Extracted raw values:")
-    print(f"  Natural Room source: {natural_path}")
-    print(
-        "    non_3dgs_winner_pct="
-        f"{natural['non_3dgs_winner_pct']:.4f}, "
-        "oracle_gain_vs_3dgs_pct="
-        f"{natural['oracle_gain_vs_3dgs_pct']:.4f}"
-    )
-    print(f"  Matched Room source: {matched_path}")
-    print(
-        "    non_3dgs_winner_pct="
-        f"{matched['non_3dgs_winner_pct']:.4f}, "
-        "oracle_gain_vs_3dgs_pct="
-        f"{matched['oracle_gain_vs_3dgs_pct']:.4f}"
-    )
-    for scene in SCENES:
-        values = sensitivity[scene]
-        print(f"  Sensitivity {scene} source: {sources[scene]}")
+def print_matched_values(path: Path, matched: Mapping[str, Mapping[str, float]]) -> None:
+    print("Matched-capacity source:")
+    print(f"  {path}")
+    for key, label in (("natural", "Natural"), ("matched", "250k each")):
+        row = matched[key]
         print(
-            f"    p32={values[32]:.4f}, p64={values[64]:.4f}, p128={values[128]:.4f}"
+            f"  {label}: patch_size={int(row['patch_size'])}, stride={int(row['stride'])}, "
+            f"tie_threshold_mse={row['tie_threshold_mse']:.12g}, "
+            f"non_3dgs_winner_pct={row['non_3dgs_winner_pct']:.6f}, "
+            f"oracle_gain_vs_3dgs_pct={row['oracle_gain_vs_3dgs_pct']:.6f}"
         )
+
+
+def print_sensitivity_values(paths: Mapping[str, Path], sensitivity: Mapping[str, Mapping[int, Mapping[str, float]]]) -> None:
+    print("Sensitivity sources:")
+    for scene in SCENES:
+        print(f"  {SCENE_LABELS[scene]}: {paths[scene]}")
+        for patch_size in PATCH_SIZES:
+            row = sensitivity[scene][patch_size]
+            print(
+                f"    p={patch_size}: stride={int(row['stride'])}, "
+                f"tie_threshold_mse={row['tie_threshold_mse']:.12g}, "
+                f"non_3dgs_winner_pct={row['non_3dgs_winner_pct']:.6f}, "
+                f"oracle_gain_vs_3dgs_pct={row['oracle_gain_vs_3dgs_pct']:.6f}"
+            )
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    natural = oracle_values(args.room_natural_summary)
-    matched = oracle_values(args.room_budget_summary)
-    sensitivity, sources = sensitivity_values(args.sensitivity_root)
-    validate(natural, matched, sensitivity, args.tolerance)
-    table = make_table(natural, matched, sensitivity)
+    matched = extract_matched_capacity(args.matched_comparison_json)
+    sensitivity_paths = scene_csv_paths(args)
+    sensitivity = extract_sensitivity(sensitivity_paths)
+
+    print_matched_values(args.matched_comparison_json, matched)
+    print_sensitivity_values(sensitivity_paths, sensitivity)
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(table, encoding="utf-8")
-    print_raw_values(natural, matched, sensitivity, sources, args.room_natural_summary, args.room_budget_summary)
-    print(f"Validation passed within tolerance {args.tolerance}.")
+    args.output.write_text(latex_table(matched, sensitivity), encoding="utf-8")
     print(f"Wrote {args.output}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
