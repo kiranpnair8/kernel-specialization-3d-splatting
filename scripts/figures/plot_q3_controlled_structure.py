@@ -232,7 +232,7 @@ def plot_figure(
     legend_labels = []
 
     for panel_idx, (ax, factor) in enumerate(zip(axes, FACTORS)):
-        ax.axhline(0.0, color="0.28", linewidth=0.75, alpha=0.8, zorder=0)
+        ax.axhline(0.0, color="0.18", linewidth=0.95, alpha=0.9, zorder=0)
         for comparison in COMPARISONS:
             style = COMPARISON_STYLES[comparison]
             for seed in EXPECTED_SEEDS:
@@ -272,7 +272,7 @@ def plot_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=8.7,
+            fontsize=7.2,
             fontweight="bold",
             color="0.08",
         )
@@ -284,7 +284,7 @@ def plot_figure(
         ax.spines["right"].set_visible(False)
         ax.tick_params(axis="both", length=2.5, width=0.7)
         if panel_idx == 0:
-            ax.set_ylabel("Delta PSNR (dB)")
+            ax.set_ylabel(r"$\Delta$ PSNR (dB)")
 
     fig.legend(
         legend_handles,
