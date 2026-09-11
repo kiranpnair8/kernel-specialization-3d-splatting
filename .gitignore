@@ -44,3 +44,7 @@ jobs/logs/*
 *.out
 *.err
 *.log
+
+# Local paper artifacts
+paper/
+figures/
