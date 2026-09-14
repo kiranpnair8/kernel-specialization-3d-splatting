@@ -20,6 +20,7 @@ DEFAULT_CONFIG = Path("configs/room_3dgs_ges_drk_budget250k_p32.json")
 DEFAULT_OUTPUT_DIR = Path("results/room/3dgs_vs_ges_vs_drk_budget250k_p32/figure1_crops")
 DEFAULT_VIEW = "00038.png"
 CROP_SIZE = 256
+METHODS = ("3dgs", "ges", "drk")
 SELECTED_REGIONS = {
     "3dgs": {"selected_x0": 1168, "selected_y0": 528, "selected_x1": 1296, "selected_y1": 656},
     "ges": {"selected_x0": 160, "selected_y0": 480, "selected_x1": 288, "selected_y1": 608},
@@ -93,6 +94,36 @@ def write_json(path: Path, rows: Sequence[Mapping[str, object]], overwrite: bool
         json.dump(list(rows), handle, indent=2, sort_keys=True)
 
 
+def selected_regions_from_candidate_csv(path: Path) -> Dict[str, Dict[str, int]]:
+    if not path.exists():
+        raise FileNotFoundError(f"Candidate-region CSV does not exist: {path}")
+    selected: Dict[str, Dict[str, int]] = {}
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        required = {"family", "family_rank", "x0", "y0", "x1", "y1"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
+        for row in reader:
+            family = str(row["family"]).strip().lower()
+            if family not in METHODS:
+                continue
+            if int(float(row["family_rank"])) != 1:
+                continue
+            if family in selected:
+                raise ValueError(f"{path} contains multiple family_rank=1 rows for {family}")
+            selected[family] = {
+                "selected_x0": int(float(row["x0"])),
+                "selected_y0": int(float(row["y0"])),
+                "selected_x1": int(float(row["x1"])),
+                "selected_y1": int(float(row["y1"])),
+            }
+    missing_families = [family for family in METHODS if family not in selected]
+    if missing_families:
+        raise ValueError(f"{path} does not contain family_rank=1 regions for: {missing_families}")
+    return selected
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract unlabeled publication-ready crops for Figure 1(b) from matched-budget Room renders."
@@ -100,12 +131,27 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--view", default=DEFAULT_VIEW)
+    parser.add_argument(
+        "--regions-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Optional candidate-region CSV from find_figure1_candidate_regions.py. "
+            "When supplied, the family_rank=1 region for each family is used instead "
+            "of the default manually selected Figure 1(b) regions."
+        ),
+    )
     parser.add_argument("--crop-size", type=int, default=CROP_SIZE)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 
     config_path = args.config.resolve()
     config = load_config(config_path)
+    selected_regions = (
+        selected_regions_from_candidate_csv(args.regions_csv)
+        if args.regions_csv is not None
+        else SELECTED_REGIONS
+    )
     view_paths = load_paired_view(config_path, config, args.view)
     source_paths: Dict[str, Path] = {
         "gt": view_paths.gt_path,
@@ -120,7 +166,8 @@ def main() -> None:
     image_width, image_height = images["gt"].size
 
     metadata: List[Dict[str, object]] = []
-    for region_name, selected in SELECTED_REGIONS.items():
+    for region_name in METHODS:
+        selected = selected_regions[region_name]
         crop_box = centered_crop_box(selected, image_width, image_height, args.crop_size)
         crop_width = crop_box[2] - crop_box[0]
         crop_height = crop_box[3] - crop_box[1]
