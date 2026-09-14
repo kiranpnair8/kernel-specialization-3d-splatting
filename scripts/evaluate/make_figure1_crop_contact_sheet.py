@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
@@ -35,12 +36,12 @@ def load_font(size: int) -> ImageFont.ImageFont:
 
 def text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int]:
     bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return math.ceil(bbox[2] - bbox[0]), math.ceil(bbox[3] - bbox[1])
 
 
 def multiline_text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int]:
     bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=4, align="center")
-    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return math.ceil(bbox[2] - bbox[0]), math.ceil(bbox[3] - bbox[1])
 
 
 def load_crops(input_dir: Path) -> Dict[tuple[str, str], Image.Image]:
