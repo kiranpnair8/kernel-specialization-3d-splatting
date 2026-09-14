@@ -9,9 +9,9 @@ from PIL import Image, ImageDraw, ImageFont
 DEFAULT_INPUT_DIR = Path("results/room/3dgs_vs_ges_vs_drk_budget250k_p32/figure1_crops")
 DEFAULT_OUTPUT_NAME = "figure1_crop_contact_sheet.png"
 ROWS = (
-    ("3DGS-favored region", "3dgs"),
-    ("GES-favored region", "ges"),
-    ("DRK-favored region", "drk"),
+    ("3DGS\nfavored", "3dgs"),
+    ("GES\nfavored", "ges"),
+    ("DRK\nfavored", "drk"),
 )
 COLUMNS = (
     ("GT", "gt"),
@@ -38,6 +38,11 @@ def text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
 
+def multiline_text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int]:
+    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=4, align="center")
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
 def load_crops(input_dir: Path) -> Dict[tuple[str, str], Image.Image]:
     crops: Dict[tuple[str, str], Image.Image] = {}
     for _, row_key in ROWS:
@@ -56,11 +61,12 @@ def make_contact_sheet(input_dir: Path, output_path: Path, spacing: int = 12) ->
     crops = load_crops(input_dir)
     crop_width, crop_height = next(iter(crops.values())).size
     column_font = load_font(34)
-    row_font = load_font(30)
+    row_font = load_font(26)
 
     measure_canvas = Image.new("RGB", (1, 1), (255, 255, 255))
     measure_draw = ImageDraw.Draw(measure_canvas)
-    left_margin = max(text_size(measure_draw, label, row_font)[0] for label, _ in ROWS) + 28
+    row_label_padding = 14
+    left_margin = max(multiline_text_size(measure_draw, label, row_font)[0] for label, _ in ROWS) + 2 * row_label_padding
     top_margin = max(text_size(measure_draw, label, column_font)[1] for label, _ in COLUMNS) + 28
 
     canvas_width = left_margin + len(COLUMNS) * crop_width + (len(COLUMNS) - 1) * spacing
@@ -75,8 +81,15 @@ def make_contact_sheet(input_dir: Path, output_path: Path, spacing: int = 12) ->
 
     for row_index, (row_label, row_key) in enumerate(ROWS):
         y = top_margin + row_index * (crop_height + spacing)
-        _, label_height = text_size(draw, row_label, row_font)
-        draw.text((12, y + (crop_height - label_height) / 2), row_label, fill=(20, 20, 20), font=row_font)
+        label_width, label_height = multiline_text_size(draw, row_label, row_font)
+        draw.multiline_text(
+            ((left_margin - label_width) / 2, y + (crop_height - label_height) / 2),
+            row_label,
+            fill=(20, 20, 20),
+            font=row_font,
+            spacing=4,
+            align="center",
+        )
         for column_index, (_, column_key) in enumerate(COLUMNS):
             x = left_margin + column_index * (crop_width + spacing)
             canvas.paste(crops[(row_key, column_key)], (x, y))
