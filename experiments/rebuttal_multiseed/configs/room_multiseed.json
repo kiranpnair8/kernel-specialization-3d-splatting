@@ -1,0 +1,41 @@
+{
+  "experiment": "rebuttal_multiseed_room",
+  "scene": "room",
+  "project_root": "/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting",
+  "dataset": "datasets/mipnerf360/room",
+  "reference_gt": "outputs/3dgs/room_baseline/test/ours_30000/gt",
+  "output_root": "outputs/rebuttal_multiseed/room",
+  "result_root": "experiments/rebuttal_multiseed/results",
+  "figure_root": "experiments/rebuttal_multiseed/figures",
+  "seeds": [0, 1, 2],
+  "expected_test_views": 39,
+  "patch_size": 32,
+  "stride": 16,
+  "tie_threshold_mse": 0.00001,
+  "bootstrap_replicates": 2000,
+  "bootstrap_seed": 2027,
+  "diagnostic_view": "00038.png",
+  "methods": {
+    "3dgs": {
+      "root": "external/gaussian-splatting",
+      "upstream": "https://github.com/graphdeco-inria/gaussian-splatting",
+      "commit": "54c035f7834b564019656c3e3fcc3646292f727d",
+      "iterations": 30000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/kernel_splat"
+    },
+    "ges": {
+      "root": "external/ges-splatting",
+      "upstream": "https://github.com/ajhamdi/ges-splatting",
+      "commit": "c05fc7dbb22e270a5a6f490e7040adac4af02c96",
+      "iterations": 40000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/ges_splat"
+    },
+    "drk": {
+      "root": "external/drk",
+      "upstream": "https://github.com/VAST-AI-Research/DRK",
+      "commit": "5146227784496c813e0df5d5637373f1468d28fd",
+      "iterations": 35000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/drk_splat"
+    }
+  }
+}
