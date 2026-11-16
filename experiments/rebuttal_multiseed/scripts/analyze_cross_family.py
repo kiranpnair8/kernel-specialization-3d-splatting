@@ -4,10 +4,8 @@ import argparse
 from itertools import product
 from pathlib import Path
 import sys
+import time
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -16,9 +14,6 @@ for path in (SCRIPT_DIR, REPO_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from analysis.local_error.image_io import load_rgb
-from analysis.local_error.patches import Patch
-from analysis.winner_maps.visualize import save_winner_map
 from common import atomic_json, fractions, load_config, load_error_bundle, oracle_metrics, resolve_project_path, summarize, winner_labels, write_csv
 
 
@@ -42,7 +37,101 @@ def combo_record(values: np.ndarray, labels: list[str], tie: float) -> tuple[dic
     return result, winners
 
 
+def cross_family_combinations(seeds: list[int]) -> list[tuple[int, int, int]]:
+    combinations = list(product(seeds, repeat=3))
+    expected_count = len(seeds) ** 3
+    if len(combinations) != expected_count or len(set(combinations)) != expected_count:
+        raise AssertionError(f"Cross-family combination enumeration is not exactly {len(seeds)}^3")
+    return combinations
+
+
+def combination_error_indices(
+    run_ids: list[str], combinations: list[tuple[int, int, int]]
+) -> np.ndarray:
+    indices = [
+        [
+            run_ids.index(f"3dgs_seed_{three_seed}"),
+            run_ids.index(f"ges_seed_{ges_seed}"),
+            run_ids.index(f"drk_seed_{drk_seed}"),
+        ]
+        for three_seed, ges_seed, drk_seed in combinations
+    ]
+    result = np.asarray(indices, dtype=np.int64)
+    if result.shape != (len(combinations), 3):
+        raise AssertionError(f"Unexpected combination-index shape: {result.shape}")
+    return result
+
+
+def precompute_view_oracle_sums(
+    errors: np.ndarray,
+    views: np.ndarray,
+    combination_indices: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return sufficient statistics for a patch-weighted view bootstrap.
+
+    Each view/combination stores the sum of selected 3DGS patch MSE and the
+    sum of the cross-family per-patch oracle MSE. Patch counts are retained so
+    resampled MSEs use the exact weighting of concatenating all sampled patches.
+    """
+    unique_views = np.asarray(sorted(set(views.astype(str))), dtype=str)
+    view_count = len(unique_views)
+    combination_count = len(combination_indices)
+    reference_sums = np.zeros((view_count, combination_count), dtype=np.float64)
+    oracle_sums = np.zeros_like(reference_sums)
+    patch_counts = np.zeros(view_count, dtype=np.int64)
+
+    for view_index, view in enumerate(unique_views):
+        view_errors = errors[views == view]
+        patch_counts[view_index] = len(view_errors)
+        if patch_counts[view_index] == 0:
+            raise ValueError(f"View has no patches: {view}")
+        reference = view_errors[:, combination_indices[:, 0]]
+        ges = view_errors[:, combination_indices[:, 1]]
+        drk = view_errors[:, combination_indices[:, 2]]
+        oracle = np.minimum(np.minimum(reference, ges), drk)
+        reference_sums[view_index] = reference.sum(axis=0, dtype=np.float64)
+        oracle_sums[view_index] = oracle.sum(axis=0, dtype=np.float64)
+
+    if np.any(oracle_sums > reference_sums + 1e-12):
+        raise AssertionError("Precomputed cross-family oracle sum exceeds its 3DGS reference sum")
+    return unique_views, patch_counts, reference_sums, oracle_sums
+
+
+def bootstrap_mean_oracle_gain(
+    patch_counts: np.ndarray,
+    reference_sums: np.ndarray,
+    oracle_sums: np.ndarray,
+    replicates: int,
+    seed: int,
+) -> np.ndarray:
+    """Bootstrap the mean gain across dependent combinations by whole views."""
+    if reference_sums.shape != oracle_sums.shape:
+        raise ValueError("Reference and oracle sum matrices must have identical shapes")
+    if reference_sums.shape[0] != len(patch_counts):
+        raise ValueError("View counts do not match precomputed sum matrices")
+    if replicates <= 0:
+        raise ValueError("bootstrap replicates must be positive")
+
+    rng = np.random.default_rng(seed)
+    view_count = len(patch_counts)
+    sampled_view_indices = rng.choice(view_count, size=(replicates, view_count), replace=True)
+    sampled_patch_counts = patch_counts[sampled_view_indices].sum(axis=1, dtype=np.int64)
+    sampled_reference_sums = reference_sums[sampled_view_indices].sum(axis=1, dtype=np.float64)
+    sampled_oracle_sums = oracle_sums[sampled_view_indices].sum(axis=1, dtype=np.float64)
+
+    reference_mse = sampled_reference_sums / sampled_patch_counts[:, None]
+    oracle_mse = sampled_oracle_sums / sampled_patch_counts[:, None]
+    if np.any(reference_mse <= 0.0):
+        raise ValueError("Cannot compute relative oracle gain with non-positive 3DGS reference MSE")
+    gains = (reference_mse - oracle_mse) / reference_mse
+    return gains.mean(axis=1)
+
+
 def save_figures(result_root: Path, figure_root: Path, combination_rows: list[dict[str, object]], per_view_rows: list[dict[str, object]], errors: np.ndarray, run_ids: list[str], fair_rows: list[dict[str, object]]) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     figure_root.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False})
     seed_values = sorted({int(row["3dgs_seed"]) for row in fair_rows})
@@ -83,6 +172,7 @@ def save_figures(result_root: Path, figure_root: Path, combination_rows: list[di
 
 
 def main() -> int:
+    analysis_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="Analyze all 27 dependent cross-family seed combinations.")
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
@@ -90,18 +180,21 @@ def main() -> int:
     result_root = resolve_project_path(config, str(config["result_root"]))
     figure_root = resolve_project_path(config, str(config["figure_root"]))
     errors, run_ids, views, metadata = load_error_bundle(result_root / "patch_errors.npz")
+    print(f"[cross-family] loaded {len(errors):,} patches, {len(set(views))} views, and {len(run_ids)} runs")
     seeds = [int(seed) for seed in config["seeds"]]
-    combinations = list(product(seeds, repeat=3))
-    if len(combinations) != 27 or len(set(combinations)) != 27:
-        raise AssertionError("Cross-family combination enumeration is not exactly 3^3")
+    combinations = cross_family_combinations(seeds)
+    if len(combinations) != 27:
+        raise AssertionError(f"Expected 27 Room seed combinations, found {len(combinations)}")
+    combination_indices = combination_error_indices(run_ids, combinations)
     tie = float(config["tie_threshold_mse"])
     labels = ["3dgs", "ges", "drk"]
     combination_rows: list[dict[str, object]] = []
     per_view_rows: list[dict[str, object]] = []
     canonical_winners = None
-    for three_seed, ges_seed, drk_seed in combinations:
+    combination_started = time.perf_counter()
+    for combination_index, (three_seed, ges_seed, drk_seed) in enumerate(combinations, start=1):
         combination = f"3dgs{three_seed}_ges{ges_seed}_drk{drk_seed}"
-        indices = [run_ids.index(f"3dgs_seed_{three_seed}"), run_ids.index(f"ges_seed_{ges_seed}"), run_ids.index(f"drk_seed_{drk_seed}")]
+        indices = combination_indices[combination_index - 1]
         values = errors[:, indices]
         stats, winners = combo_record(values, labels, tie)
         row = {"combination": combination, "3dgs_seed": three_seed, "ges_seed": ges_seed, "drk_seed": drk_seed, **stats}
@@ -112,6 +205,9 @@ def main() -> int:
             mask = views == view
             view_stats, _ = combo_record(values[mask], labels, tie)
             per_view_rows.append({"combination": combination, "view": view, **view_stats})
+        if combination_index % 9 == 0 or combination_index == len(combinations):
+            print(f"[cross-family] summarized combination {combination_index}/{len(combinations)}")
+    print(f"[cross-family] combination and per-view summaries: {time.perf_counter() - combination_started:.2f}s")
 
     metric_names = [
         "3dgs_winner_fraction", "ges_winner_fraction", "drk_winner_fraction", "tie_fraction",
@@ -120,18 +216,23 @@ def main() -> int:
     ]
     summary = {metric: summarize([float(row[metric]) for row in combination_rows]) for metric in metric_names}
 
-    rng = np.random.default_rng(int(config["bootstrap_seed"]))
-    unique_views = sorted(set(views))
-    bootstrap = []
-    for _ in range(int(config["bootstrap_replicates"])):
-        sampled_views = rng.choice(unique_views, size=len(unique_views), replace=True)
-        sampled_indices = np.concatenate([np.flatnonzero(views == view) for view in sampled_views])
-        gains = []
-        for three_seed, ges_seed, drk_seed in combinations:
-            indices = [run_ids.index(f"3dgs_seed_{three_seed}"), run_ids.index(f"ges_seed_{ges_seed}"), run_ids.index(f"drk_seed_{drk_seed}")]
-            gain = combo_record(errors[sampled_indices][:, indices], labels, tie)[0]["oracle_gain_vs_3dgs_fraction"]
-            gains.append(gain)
-        bootstrap.append(float(np.mean(gains)))
+    bootstrap_started = time.perf_counter()
+    unique_views, patch_counts, reference_sums, oracle_sums = precompute_view_oracle_sums(
+        errors, views, combination_indices
+    )
+    precompute_elapsed = time.perf_counter() - bootstrap_started
+    bootstrap = bootstrap_mean_oracle_gain(
+        patch_counts,
+        reference_sums,
+        oracle_sums,
+        int(config["bootstrap_replicates"]),
+        int(config["bootstrap_seed"]),
+    )
+    bootstrap_elapsed = time.perf_counter() - bootstrap_started - precompute_elapsed
+    print(
+        f"[cross-family] bootstrap sufficient statistics: {precompute_elapsed:.2f}s; "
+        f"{len(bootstrap):,} view-cluster replicates: {bootstrap_elapsed:.2f}s"
+    )
     summary["mean_oracle_gain_view_cluster_bootstrap_ci"] = {
         "low": float(np.quantile(bootstrap, 0.025)), "high": float(np.quantile(bootstrap, 0.975))
     }
@@ -167,13 +268,18 @@ def main() -> int:
     diagnostic = str(config["diagnostic_view"])
     if diagnostic not in set(views): diagnostic = sorted(set(views))[0]
     mask = views == diagnostic
+    from analysis.local_error.image_io import load_rgb
+    from analysis.local_error.patches import Patch
+    from analysis.winner_maps.visualize import save_winner_map
+
     with np.load(result_root / "patch_errors.npz", allow_pickle=False) as bundle:
         patches = [Patch(int(x), int(y), int(w), int(h)) for x, y, w, h in zip(bundle["x"][mask], bundle["y"][mask], bundle["width"][mask], bundle["height"][mask])]
     gt = load_rgb(resolve_project_path(config, str(config["reference_gt"])) / diagnostic)
     figure_root.mkdir(parents=True, exist_ok=True)
     save_winner_map(figure_root / f"cross_family_seed000_{Path(diagnostic).stem}_winner.png", gt.shape[:2], patches, canonical_winners[mask], COLORS)
     save_figures(result_root, figure_root, combination_rows, per_view_rows, errors, run_ids, fair_rows)
-    print(f"Wrote 27-combination analysis to {result_root}")
+    print(f"[cross-family] wrote 27-combination analysis to {result_root}")
+    print(f"[cross-family] total elapsed: {time.perf_counter() - analysis_started:.2f}s")
     return 0
 
 
