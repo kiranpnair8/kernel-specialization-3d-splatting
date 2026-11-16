@@ -48,3 +48,4 @@ jobs/logs/*
 # Local paper artifacts
 paper/
 figures/
+gpu_sleep.sh
