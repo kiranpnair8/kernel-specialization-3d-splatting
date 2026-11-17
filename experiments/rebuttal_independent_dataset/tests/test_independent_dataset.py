@@ -24,36 +24,68 @@ from analysis.local_error.metrics import mse
 from analysis.structure_features.descriptors import image_patch_complexity_descriptors
 
 
-def write_colmap_dataset(root: Path, count: int = 9) -> None:
+def write_colmap_dataset(
+    root: Path,
+    count: int = 9,
+    colmap_size: tuple[int, int] = (8, 6),
+    image_size: tuple[int, int] | None = None,
+    focal: tuple[float, float] = (7.0, 7.0),
+) -> None:
+    image_size = image_size or colmap_size
     image_root = root / "images"; sparse = root / "sparse" / "0"
     image_root.mkdir(parents=True); sparse.mkdir(parents=True)
     with (sparse / "cameras.bin").open("wb") as handle:
-        handle.write(struct.pack("<Q", 1)); handle.write(struct.pack("<iiQQ", 1, 1, 8, 6)); handle.write(struct.pack("<dddd", 7.0, 7.0, 4.0, 3.0))
+        handle.write(struct.pack("<Q", 1)); handle.write(struct.pack("<iiQQ", 1, 1, *colmap_size)); handle.write(struct.pack("<dddd", *focal, colmap_size[0] / 2, colmap_size[1] / 2))
     with (sparse / "images.bin").open("wb") as handle:
         handle.write(struct.pack("<Q", count))
         for index in range(count):
             name = f"image_{index:03d}.png"
             handle.write(struct.pack("<idddddddi", index + 1, 1.0, 0.0, 0.0, 0.0, float(index), 0.0, 0.0, 1))
             handle.write(name.encode() + b"\x00"); handle.write(struct.pack("<Q", 0))
-            Image.fromarray(np.full((6, 8, 3), index, dtype=np.uint8)).save(image_root / name)
+            Image.fromarray(np.full((image_size[1], image_size[0], 3), index, dtype=np.uint8)).save(image_root / name)
     (sparse / "points3D.txt").write_text("# synthetic fixture\n", encoding="utf-8")
 
 
 class IndependentDatasetTests(unittest.TestCase):
-    def test_colmap_audit_freezes_every_eighth_split(self) -> None:
+    @staticmethod
+    def config(root: Path, dataset: str = "datasets/tandt/train") -> dict:
+        return {
+            "project_root": str(root), "output_root": "outputs", "split": {"holdout": 8},
+            "scenes": {"train": {"label": "Train", "dataset": dataset, "official_archive": "x"}},
+            "methods": {name: {} for name in ("3dgs", "ges", "drk")},
+        }
+
+    def test_exact_resolution_and_every_eighth_split(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); dataset = root / "datasets" / "tandt" / "train"
             write_colmap_dataset(dataset)
-            config = {
-                "project_root": str(root), "output_root": "outputs", "split": {"holdout": 8},
-                "scenes": {"train": {"label": "Train", "dataset": "datasets/tandt/train", "official_archive": "x"}},
-                "methods": {name: {} for name in ("3dgs", "ges", "drk")},
-            }
-            row = build_manifest(config)[0]
+            row = build_manifest(self.config(root))[0]
             self.assertEqual(row["status"], "ready")
             self.assertEqual(row["train_view_count"], 7)
             self.assertEqual(row["test_view_count"], 2)
             self.assertEqual(row["test_split_sha256"], digest_text(["image_000.png", "image_008.png"]))
+            self.assertFalse(row["images_are_pre_downsampled"])
+            self.assertEqual(row["camera_geometry"]["loaded_resolutions"], [[8, 6]])
+
+    def test_valid_odd_width_predownsample_and_effective_focal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); dataset = root / "datasets" / "tandt" / "train"
+            write_colmap_dataset(dataset, colmap_size=(1959, 1090), image_size=(980, 545), focal=(1200.0, 1180.0))
+            row = build_manifest(self.config(root))[0]
+            self.assertTrue(row["colmap_image_geometry_consistent"])
+            self.assertTrue(row["images_are_pre_downsampled"])
+            self.assertEqual(row["camera_geometry"]["loaded_resolutions"], [[980, 545]])
+            self.assertAlmostEqual(row["camera_geometry"]["downsample_factor_range"][0], 2.0, delta=0.002)
+            self.assertAlmostEqual(row["camera_geometry"]["effective_focal_x_range"][0], 1200.0 * 980 / 1959)
+            self.assertAlmostEqual(row["camera_geometry"]["effective_focal_y_range"][0], 1180.0 * 545 / 1090)
+            self.assertEqual(len(set(row["method_test_split_sha256"].values())), 1)
+
+    def test_invalid_nonuniform_resolution_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); dataset = root / "datasets" / "tandt" / "train"
+            write_colmap_dataset(dataset, colmap_size=(1959, 1090), image_size=(980, 500))
+            with self.assertRaisesRegex(ValueError, "not a uniformly scaled version"):
+                build_manifest(self.config(root))
 
     def test_alignment_uses_pixels_not_candidate_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -15,6 +15,8 @@ Install/extract it so these canonical directories exist:
 
 Each `sparse/0` must contain COLMAP `cameras.bin`, `images.bin`, and `points3D.bin` (text camera/image models are also accepted by the audit). All methods consume the same undistorted `PINHOLE` or `SIMPLE_PINHOLE` cameras. Under `--eval`, the three audited loaders sort image names lexicographically and select indices `0, 8, 16, ...` as test views. They use the same NeRF++ normalization of training-camera centers. With the default `resolution=-1`, all three loaders preserve images up to width 1600 and apply the same width-1600 automatic reduction above that size.
 
+Official preprocessed images may be uniformly smaller than the dimensions stored in COLMAP. The audit therefore checks uniform x/y scaling rather than requiring literal equality. Half-pixel rounding is accepted, including Train's `1959x1090 -> 980x545` reduction. It rejects aspect-ratio distortion and inconsistent dataset-wide scale factors. For every camera it computes the actual loader resolution and verifies the effective focal lengths implied by the unchanged COLMAP FoV: `fx_effective = fx_COLMAP * loaded_width / COLMAP_width` and likewise for y. The manifest reports these resolutions, scale ranges, and effective-focal ranges separately for all three methods.
+
 Run the audit before submitting training:
 
 ```bash
@@ -24,7 +26,7 @@ python experiments/rebuttal_independent_dataset/scripts/audit_datasets.py \
   --strict
 ```
 
-It writes `dataset_manifest.json/csv` under the ignored experiment results directory. The manifest records dataset paths, COLMAP and image resolutions, camera models, ordered train/test counts and SHA-256 split hashes, COLMAP model hashes, method commits/training budgets, and expected output paths. Training refuses to proceed if this audit fails.
+It writes `dataset_manifest.json/csv` under the ignored experiment results directory. The manifest records dataset paths, COLMAP/image/loaded resolutions, camera models, effective intrinsics, ordered train/test counts and SHA-256 split hashes, COLMAP model hashes, method commits/training budgets, loader-source hashes, and expected output paths. The strict audit inspects each pinned upstream `dataset_readers.py` and `camera_utils.py` to verify the expected split, FoV, and default-resolution logic. Training refuses to proceed if this audit fails. Each run then copies the audited split hash, camera counts, and effective camera geometry into `run_status.json`.
 
 ## Training and official evaluation
 

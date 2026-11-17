@@ -66,6 +66,20 @@ def main() -> int:
     method_config = config["methods"][args.method]
     dataset = resolve(config, config["scenes"][args.scene]["dataset"])
     method_root = resolve(config, method_config["root"])
+    manifest_path = resolve(config, config["result_root"]) / "dataset_manifest.json"
+    if not args.dry_run:
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Strict dataset audit manifest is required before training: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        scene_manifest = next((row for row in manifest["scenes"] if row["scene"] == args.scene), None)
+        loader_manifest = next((row for row in manifest["loader_audit"] if row["method"] == args.method), None)
+        if scene_manifest is None or scene_manifest.get("status") != "ready":
+            raise RuntimeError(f"Dataset audit did not mark {args.scene} ready")
+        if loader_manifest is None or loader_manifest.get("status") != "verified":
+            raise RuntimeError(f"Loader audit did not verify {args.method}")
+        method_split_hashes = scene_manifest.get("method_test_split_sha256", {})
+        if set(method_split_hashes) != set(config["methods"]) or len(set(method_split_hashes.values())) != 1:
+            raise RuntimeError(f"Held-out camera identities are not identical across methods: {method_split_hashes}")
     seed_root = resolve(config, config["output_root"]) / args.scene / args.method / f"seed_{seed}"
     status_path = seed_root / "run_status.json"
     if status_path.exists():
@@ -94,6 +108,12 @@ def main() -> int:
         "seed": seed, "iterations": iterations, "state": "running", "dataset": str(dataset),
         "method_root": str(method_root), "upstream_commit": actual_commit,
         "model_base": str(model_base), "attempt": len(attempts) + 1, "commands": [],
+        "dataset_manifest": str(manifest_path),
+        "train_split_sha256": scene_manifest["train_split_sha256"],
+        "test_split_sha256": scene_manifest["test_split_sha256"],
+        "train_view_count": scene_manifest["train_view_count"],
+        "test_view_count": scene_manifest["test_view_count"],
+        "audited_camera_geometry": scene_manifest["method_camera_geometry"][args.method],
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     atomic_json(status_path, status)
