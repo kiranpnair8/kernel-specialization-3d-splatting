@@ -1,0 +1,49 @@
+{
+  "experiment": "rebuttal_independent_dataset",
+  "project_root": "/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting",
+  "output_root": "outputs/rebuttal_independent_dataset",
+  "result_root": "experiments/rebuttal_independent_dataset/results",
+  "figure_root": "experiments/rebuttal_independent_dataset/figures",
+  "seed": 0,
+  "patch_size": 32,
+  "stride": 16,
+  "tie_threshold_mse": 0.00001,
+  "bootstrap_replicates": 2000,
+  "bootstrap_seed": 2027,
+  "split": {"kind": "sorted_colmap_every_n", "holdout": 8},
+  "scenes": {
+    "tandt_train": {
+      "label": "Tanks and Temples / Train",
+      "dataset": "datasets/tandt/train",
+      "official_archive": "https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip"
+    },
+    "deepblending_drjohnson": {
+      "label": "Deep Blending / Dr Johnson",
+      "dataset": "datasets/deepblending/drjohnson",
+      "official_archive": "https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip"
+    }
+  },
+  "methods": {
+    "3dgs": {
+      "root": "external/gaussian-splatting",
+      "upstream": "https://github.com/graphdeco-inria/gaussian-splatting",
+      "commit": "54c035f7834b564019656c3e3fcc3646292f727d",
+      "iterations": 30000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/kernel_splat"
+    },
+    "ges": {
+      "root": "external/ges-splatting",
+      "upstream": "https://github.com/ajhamdi/ges-splatting",
+      "commit": "c05fc7dbb22e270a5a6f490e7040adac4af02c96",
+      "iterations": 40000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/ges_splat"
+    },
+    "drk": {
+      "root": "external/drk",
+      "upstream": "https://github.com/VAST-AI-Research/DRK",
+      "commit": "5146227784496c813e0df5d5637373f1468d28fd",
+      "iterations": 35000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/drk_splat"
+    }
+  }
+}
