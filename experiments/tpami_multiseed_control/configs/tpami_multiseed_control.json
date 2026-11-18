@@ -1,0 +1,39 @@
+{
+  "experiment": "tpami_multiseed_control_drjohnson",
+  "project_root": "/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting",
+  "scene": "deepblending_drjohnson",
+  "dataset": "datasets/deepblending/drjohnson",
+  "experiment2_config": "experiments/rebuttal_independent_dataset/configs/independent_scenes.json",
+  "experiment2_result": "experiments/rebuttal_independent_dataset/results/deepblending_drjohnson",
+  "experiment2_output_root": "outputs/rebuttal_independent_dataset",
+  "output_root": "outputs/tpami_multiseed_control",
+  "result_root": "experiments/tpami_multiseed_control/results",
+  "seeds": [0, 1, 2],
+  "new_training_seeds": [1, 2],
+  "patch_size": 32,
+  "stride": 16,
+  "tie_threshold_mse": 0.00001,
+  "sensitivity": {
+    "patch_sizes": [32, 64, 128],
+    "tie_thresholds_mse": [0.0, 0.00001, 0.00005],
+    "stride_policy": "half_patch"
+  },
+  "bootstrap_replicates": 2000,
+  "bootstrap_seed": 2027,
+  "methods": {
+    "3dgs": {
+      "root": "external/gaussian-splatting",
+      "upstream": "https://github.com/graphdeco-inria/gaussian-splatting",
+      "commit": "54c035f7834b564019656c3e3fcc3646292f727d",
+      "iterations": 30000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/kernel_splat"
+    },
+    "ges": {
+      "root": "external/ges-splatting",
+      "upstream": "https://github.com/ajhamdi/ges-splatting",
+      "commit": "c05fc7dbb22e270a5a6f490e7040adac4af02c96",
+      "iterations": 40000,
+      "environment": "/home/rizk_lab/shared/kiran/envs/ges_splat"
+    }
+  }
+}

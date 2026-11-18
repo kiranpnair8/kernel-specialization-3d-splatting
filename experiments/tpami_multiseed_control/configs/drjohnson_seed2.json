@@ -1,0 +1,23 @@
+{
+  "experiment": "tpami_multiseed_control_drjohnson",
+  "project_root": "/home/rizk_lab/shared/kiran/kernel-specialization-3d-splatting",
+  "output_root": "outputs/tpami_multiseed_control",
+  "result_root": "experiments/tpami_multiseed_control/results",
+  "figure_root": "experiments/tpami_multiseed_control/results/figures",
+  "seed": 2,
+  "patch_size": 32,
+  "stride": 16,
+  "tie_threshold_mse": 0.00001,
+  "split": {"kind": "sorted_colmap_every_n", "holdout": 8},
+  "scenes": {
+    "deepblending_drjohnson": {
+      "label": "Deep Blending / Dr Johnson",
+      "dataset": "datasets/deepblending/drjohnson",
+      "official_archive": "https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip"
+    }
+  },
+  "methods": {
+    "3dgs": {"root": "external/gaussian-splatting", "upstream": "https://github.com/graphdeco-inria/gaussian-splatting", "commit": "54c035f7834b564019656c3e3fcc3646292f727d", "iterations": 30000, "environment": "/home/rizk_lab/shared/kiran/envs/kernel_splat"},
+    "ges": {"root": "external/ges-splatting", "upstream": "https://github.com/ajhamdi/ges-splatting", "commit": "c05fc7dbb22e270a5a6f490e7040adac4af02c96", "iterations": 40000, "environment": "/home/rizk_lab/shared/kiran/envs/ges_splat"}
+  }
+}
