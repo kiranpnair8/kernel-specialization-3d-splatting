@@ -116,6 +116,11 @@ values, checks repeated beta-2 determinism, and compares opacity and projected-
 covariance gradients against central finite differences for every beta. It does
 not train a scene.
 
+The smoke wrapper also runs `gpu_depth_gradient_regression.py`. That regression
+repeats depth-only backward passes 10 times for every beta with both contiguous
+and expanded zero-stride upstream gradients, compares both layouts, and checks
+depth and RGB opacity/covariance gradients against finite differences.
+
 Training writes `kernel_beta` into the normal `cfg_args`. `render.py` restores
 that saved value by default, accepts an explicit `--kernel_beta` override, and
 falls back to beta 2 for pre-intervention checkpoints whose config lacks it.
@@ -147,3 +152,14 @@ Use beta `1`, `2`, or `4`. Full training sweeps are intentionally out of scope.
 - Beta-dependent support changes tile workload substantially, especially for
   beta 1. This is required for correct alpha-threshold coverage and may change
   runtime/memory, but not the stated optimization protocol.
+
+### Inverse-depth backward layout fix
+
+PyTorch may represent the upstream gradient of a reduction such as
+`0.01 * invdepth.sum()` as an expanded tensor with zero strides. The CUDA
+backward kernel indexes this gradient as a dense `(1,H,W)` array. The binding
+therefore materializes both incoming output gradients (`dL/dcolor` and
+`dL/dinvdepth`) as named contiguous tensors, validates their dtype/device/shape,
+and retains their storage through the CUDA launch. This changes only gradient
+layout handling; radial-kernel values, derivatives, support bounds, and the
+beta-2 forward path are untouched.

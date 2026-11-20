@@ -157,9 +157,22 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 {
   TORCH_CHECK(kernel_beta == 1 || kernel_beta == 2 || kernel_beta == 4,
     "kernel_beta must be one of 1, 2, or 4; got ", kernel_beta);
+  TORCH_CHECK(dL_dout_color.is_cuda(), "dL_dout_color must be a CUDA tensor");
+  TORCH_CHECK(dL_dout_color.scalar_type() == torch::kFloat32,
+    "dL_dout_color must have dtype float32");
+  TORCH_CHECK(dL_dout_color.dim() == 3 && dL_dout_color.size(0) == NUM_CHANNELS,
+    "dL_dout_color must have shape (", NUM_CHANNELS, ", H, W); got ", dL_dout_color.sizes());
   const int P = means3D.size(0);
   const int H = dL_dout_color.size(1);
   const int W = dL_dout_color.size(2);
+
+  // Autograd commonly represents gradients of reductions (for example,
+  // 0.01 * invdepth.sum()) as expanded zero-stride tensors. CUDA kernels below
+  // index both upstream gradients as dense CHW arrays, so materialize them
+  // explicitly. Named locals keep the backing storage alive until all launches
+  // in Rasterizer::backward have been enqueued on the current stream.
+  const torch::Tensor dL_dout_color_contiguous = dL_dout_color.contiguous();
+  torch::Tensor dL_dout_invdepth_contiguous;
   
   int M = 0;
   if(sh.size(0) != 0)
@@ -180,12 +193,19 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
   
   float* dL_dinvdepthsptr = nullptr;
   float* dL_dout_invdepthptr = nullptr;
-  if(dL_dout_invdepth.size(0) != 0)
+  if(dL_dout_invdepth.numel() != 0)
   {
+	TORCH_CHECK(dL_dout_invdepth.is_cuda(), "dL_dout_invdepth must be a CUDA tensor");
+	TORCH_CHECK(dL_dout_invdepth.scalar_type() == torch::kFloat32,
+	  "dL_dout_invdepth must have dtype float32");
+	TORCH_CHECK(dL_dout_invdepth.dim() == 3 && dL_dout_invdepth.size(0) == 1 &&
+	  dL_dout_invdepth.size(1) == H && dL_dout_invdepth.size(2) == W,
+	  "dL_dout_invdepth must have shape (1, ", H, ", ", W, "); got ",
+	  dL_dout_invdepth.sizes());
+	dL_dout_invdepth_contiguous = dL_dout_invdepth.contiguous();
 	dL_dinvdepths = torch::zeros({P, 1}, means3D.options());
-	dL_dinvdepths = dL_dinvdepths.contiguous();
-	dL_dinvdepthsptr = dL_dinvdepths.data<float>();
-	dL_dout_invdepthptr = dL_dout_invdepth.data<float>();
+	dL_dinvdepthsptr = dL_dinvdepths.data_ptr<float>();
+	dL_dout_invdepthptr = dL_dout_invdepth_contiguous.data_ptr<float>();
   }
 
   if(P != 0)
@@ -210,7 +230,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  reinterpret_cast<char*>(geomBuffer.contiguous().data_ptr()),
 	  reinterpret_cast<char*>(binningBuffer.contiguous().data_ptr()),
 	  reinterpret_cast<char*>(imageBuffer.contiguous().data_ptr()),
-	  dL_dout_color.contiguous().data<float>(),
+	  dL_dout_color_contiguous.data_ptr<float>(),
 	  dL_dout_invdepthptr,
 	  dL_dmeans2D.contiguous().data<float>(),
 	  dL_dconic.contiguous().data<float>(),  

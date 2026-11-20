@@ -30,6 +30,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("q == 0.0f", helper)
         self.assertIn("kBeta1GradientQFloor", helper)
 
+    def test_upstream_gradients_are_materialized_before_cuda(self) -> None:
+        binding = (RASTERIZER / "rasterize_points.cu").read_text(encoding="utf-8")
+        self.assertIn("dL_dout_color_contiguous = dL_dout_color.contiguous()", binding)
+        self.assertIn("dL_dout_invdepth_contiguous = dL_dout_invdepth.contiguous()", binding)
+        self.assertIn("dL_dout_invdepth_contiguous.data_ptr<float>()", binding)
+
 
 if __name__ == "__main__":
     unittest.main()
