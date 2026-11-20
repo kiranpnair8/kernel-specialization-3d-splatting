@@ -1,0 +1,27 @@
+# Experiment outputs
+results/
+logs/
+wandb/
+outputs/
+output/
+
+# Python and CUDA build artifacts
+__pycache__/
+*.pyc
+*.so
+*.o
+*.egg-info/
+build/
+dist/
+
+# Datasets and checkpoints
+data/
+datasets/
+*.pth
+*.pt
+*.ckpt
+*.ply
+
+# Temporary files
+*.log
+*.tmp
