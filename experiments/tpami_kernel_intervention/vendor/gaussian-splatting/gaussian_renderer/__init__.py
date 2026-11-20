@@ -33,6 +33,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
+    kernel_beta = int(pipe.kernel_beta)
+    if kernel_beta not in (1, 2, 4):
+        raise ValueError(f"kernel_beta must be one of 1, 2, or 4; got {kernel_beta}")
+
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -46,7 +50,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
         debug=pipe.debug,
-        antialiasing=pipe.antialiasing
+        antialiasing=pipe.antialiasing,
+        kernel_beta=kernel_beta
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)

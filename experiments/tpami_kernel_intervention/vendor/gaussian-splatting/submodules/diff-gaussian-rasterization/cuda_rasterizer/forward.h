@@ -46,7 +46,8 @@ namespace FORWARD
 		const dim3 grid,
 		uint32_t* tiles_touched,
 		bool prefiltered,
-		bool antialiasing);
+		bool antialiasing,
+		int kernel_beta);
 
 	// Main rasterization method.
 	void render(
@@ -62,7 +63,8 @@ namespace FORWARD
 		const float* bg_color,
 		float* out_color,
 		float* depths,
-		float* depth);
+		float* depth,
+		int kernel_beta);
 }
 
 

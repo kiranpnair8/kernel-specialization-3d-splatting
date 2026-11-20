@@ -51,6 +51,7 @@ namespace CudaRasterizer
 			float* out_color,
 			float* depth,
 			bool antialiasing,
+			int kernel_beta,
 			int* radii = nullptr,
 			bool debug = false);
 
@@ -87,6 +88,7 @@ namespace CudaRasterizer
 			float* dL_dscale,
 			float* dL_drot,
 			bool antialiasing,
+			int kernel_beta,
 			bool debug);
 	};
 };

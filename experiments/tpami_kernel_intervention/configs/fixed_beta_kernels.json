@@ -1,0 +1,12 @@
+{
+  "experiment": "tpami_kernel_intervention",
+  "kernel_definition": "exp(-0.5 * q^(beta/2))",
+  "kernel_betas": [1, 2, 4],
+  "default_kernel_beta": 2,
+  "trainable_shape_parameter": false,
+  "alpha_threshold": 0.00392156862745098,
+  "beta1_gradient_q_floor": 1e-08,
+  "gaussian_beta2_support": "original_fixed_3_sigma",
+  "generalized_support": "opacity_and_alpha_threshold_derived",
+  "antialiasing_default": false
+}

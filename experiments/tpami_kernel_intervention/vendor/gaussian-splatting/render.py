@@ -64,11 +64,16 @@ if __name__ == "__main__":
     parser = ArgumentParser(description="Testing script parameters")
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
+    # Let a trained model's cfg_args supply kernel_beta unless the render
+    # command explicitly overrides it. Older cfg_args files remain Gaussian.
+    parser.set_defaults(kernel_beta=None)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     args = get_combined_args(parser)
+    if getattr(args, "kernel_beta", None) is None:
+        args.kernel_beta = 2
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)

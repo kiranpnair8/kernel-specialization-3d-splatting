@@ -218,6 +218,7 @@ int CudaRasterizer::Rasterizer::forward(
 	float* out_color,
 	float* depth,
 	bool antialiasing,
+	int kernel_beta,
 	int* radii,
 	bool debug)
 {
@@ -272,7 +273,8 @@ int CudaRasterizer::Rasterizer::forward(
 		tile_grid,
 		geomState.tiles_touched,
 		prefiltered,
-		antialiasing
+		antialiasing,
+		kernel_beta
 	), debug)
 
 	// Compute prefix sum over full list of touched tile counts by Gaussians
@@ -335,7 +337,8 @@ int CudaRasterizer::Rasterizer::forward(
 		background,
 		out_color,
 		geomState.depths,
-		depth), debug)
+		depth,
+		kernel_beta), debug)
 
 	return num_rendered;
 }
@@ -375,6 +378,7 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dscale,
 	float* dL_drot,
 	bool antialiasing,
+	int kernel_beta,
 	bool debug)
 {
 	GeometryState geomState = GeometryState::fromChunk(geom_buffer, P);
@@ -415,7 +419,8 @@ void CudaRasterizer::Rasterizer::backward(
 		(float4*)dL_dconic,
 		dL_dopacity,
 		dL_dcolor,
-		dL_dinvdepth), debug);
+		dL_dinvdepth,
+		kernel_beta), debug);
 
 	// Take care of the rest of preprocessing. Was the precomputed covariance
 	// given to us or a scales/rot pair? If precomputed, pass that. If not,

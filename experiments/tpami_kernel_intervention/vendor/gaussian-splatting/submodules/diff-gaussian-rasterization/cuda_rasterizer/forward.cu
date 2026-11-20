@@ -11,6 +11,7 @@
 
 #include "forward.h"
 #include "auxiliary.h"
+#include "kernel_utils.cuh"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
@@ -174,7 +175,8 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	const dim3 grid,
 	uint32_t* tiles_touched,
 	bool prefiltered,
-	bool antialiasing)
+	bool antialiasing,
+	int kernel_beta)
 {
 	auto idx = cg::this_grid().thread_rank();
 	if (idx >= P)
@@ -237,7 +239,11 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float mid = 0.5f * (cov.x + cov.z);
 	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
 	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
-	float my_radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
+	const float effective_opacity = opacities[idx] * h_convolution_scaling;
+	float radius_multiplier;
+	if (!RadialKernel::supportRadiusMultiplier(kernel_beta, effective_opacity, radius_multiplier))
+		return;
+	float my_radius = ceil(radius_multiplier * sqrt(max(lambda1, lambda2)));
 	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
 	uint2 rect_min, rect_max;
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
@@ -259,10 +265,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	radii[idx] = my_radius;
 	points_xy_image[idx] = point_image;
 	// Inverse 2D covariance and opacity neatly pack into one float4
-	float opacity = opacities[idx];
-
-
-	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling };
+	conic_opacity[idx] = { conic.x, conic.y, conic.z, effective_opacity };
 
 
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
@@ -285,7 +288,8 @@ renderCUDA(
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
 	const float* __restrict__ depths,
-	float* __restrict__ invdepth)
+	float* __restrict__ invdepth,
+	int kernel_beta)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -349,15 +353,16 @@ renderCUDA(
 			float2 xy = collected_xy[j];
 			float2 d = { xy.x - pixf.x, xy.y - pixf.y };
 			float4 con_o = collected_conic_opacity[j];
-			float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
-			if (power > 0.0f)
+			float kernel_value;
+			float dkernel_dq_unused;
+			if (!RadialKernel::evaluate(con_o, d, kernel_beta, kernel_value, dkernel_dq_unused))
 				continue;
 
 			// Eq. (2) from 3D Gaussian splatting paper.
 			// Obtain alpha by multiplying with Gaussian opacity
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
-			float alpha = min(0.99f, con_o.w * exp(power));
+			float alpha = min(0.99f, con_o.w * kernel_value);
 			if (alpha < 1.0f / 255.0f)
 				continue;
 			float test_T = T * (1 - alpha);
@@ -409,7 +414,8 @@ void FORWARD::render(
 	const float* bg_color,
 	float* out_color,
 	float* depths,
-	float* depth)
+	float* depth,
+	int kernel_beta)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -423,7 +429,8 @@ void FORWARD::render(
 		bg_color,
 		out_color,
 		depths, 
-		depth);
+		depth,
+		kernel_beta);
 }
 
 void FORWARD::preprocess(int P, int D, int M,
@@ -451,7 +458,8 @@ void FORWARD::preprocess(int P, int D, int M,
 	const dim3 grid,
 	uint32_t* tiles_touched,
 	bool prefiltered,
-	bool antialiasing)
+	bool antialiasing,
+	int kernel_beta)
 {
 	preprocessCUDA<NUM_CHANNELS> << <(P + 255) / 256, 256 >> > (
 		P, D, M,
@@ -479,6 +487,7 @@ void FORWARD::preprocess(int P, int D, int M,
 		grid,
 		tiles_touched,
 		prefiltered,
-		antialiasing
+		antialiasing,
+		kernel_beta
 		);
 }

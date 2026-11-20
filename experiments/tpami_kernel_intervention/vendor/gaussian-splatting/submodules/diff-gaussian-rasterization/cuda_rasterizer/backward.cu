@@ -11,6 +11,7 @@
 
 #include "backward.h"
 #include "auxiliary.h"
+#include "kernel_utils.cuh"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
@@ -468,7 +469,8 @@ renderCUDA(
 	float4* __restrict__ dL_dconic2D,
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
-	float* __restrict__ dL_dinvdepths
+	float* __restrict__ dL_dinvdepths,
+	int kernel_beta
 )
 {
 	// We rasterize again. Compute necessary block info.
@@ -561,11 +563,11 @@ renderCUDA(
 			const float2 xy = collected_xy[j];
 			const float2 d = { xy.x - pixf.x, xy.y - pixf.y };
 			const float4 con_o = collected_conic_opacity[j];
-			const float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
-			if (power > 0.0f)
+			float G;
+			float dG_dq;
+			if (!RadialKernel::evaluate(con_o, d, kernel_beta, G, dG_dq))
 				continue;
 
-			const float G = exp(power);
 			const float alpha = min(0.99f, con_o.w * G);
 			if (alpha < 1.0f / 255.0f)
 				continue;
@@ -615,21 +617,43 @@ renderCUDA(
 			dL_dalpha += (-T_final / (1.f - alpha)) * bg_dot_dpixel;
 
 
-			// Helpful reusable temporary variables
+			// Helpful reusable temporary variables. Keep the historical beta=2
+			// arithmetic exactly; use the generalized chain rule otherwise.
 			const float dL_dG = con_o.w * dL_dalpha;
-			const float gdx = G * d.x;
-			const float gdy = G * d.y;
-			const float dG_ddelx = -gdx * con_o.x - gdy * con_o.y;
-			const float dG_ddely = -gdy * con_o.z - gdx * con_o.y;
+			float dG_ddelx;
+			float dG_ddely;
+			float dG_dconic_x;
+			float dG_dconic_y;
+			float dG_dconic_w;
+			if (kernel_beta == 2)
+			{
+				const float gdx = G * d.x;
+				const float gdy = G * d.y;
+				dG_ddelx = -gdx * con_o.x - gdy * con_o.y;
+				dG_ddely = -gdy * con_o.z - gdx * con_o.y;
+				dG_dconic_x = -0.5f * gdx * d.x;
+				dG_dconic_y = -0.5f * gdx * d.y;
+				dG_dconic_w = -0.5f * gdy * d.y;
+			}
+			else
+			{
+				dG_ddelx = 2.0f * dG_dq * (con_o.x * d.x + con_o.y * d.y);
+				dG_ddely = 2.0f * dG_dq * (con_o.y * d.x + con_o.z * d.y);
+				dG_dconic_x = dG_dq * d.x * d.x;
+				// The symmetric off-diagonal is represented once; downstream
+				// covariance backpropagation accounts for its duplicated entry.
+				dG_dconic_y = dG_dq * d.x * d.y;
+				dG_dconic_w = dG_dq * d.y * d.y;
+			}
 
 			// Update gradients w.r.t. 2D mean position of the Gaussian
 			atomicAdd(&dL_dmean2D[global_id].x, dL_dG * dG_ddelx * ddelx_dx);
 			atomicAdd(&dL_dmean2D[global_id].y, dL_dG * dG_ddely * ddely_dy);
 
 			// Update gradients w.r.t. 2D covariance (2x2 matrix, symmetric)
-			atomicAdd(&dL_dconic2D[global_id].x, -0.5f * gdx * d.x * dL_dG);
-			atomicAdd(&dL_dconic2D[global_id].y, -0.5f * gdx * d.y * dL_dG);
-			atomicAdd(&dL_dconic2D[global_id].w, -0.5f * gdy * d.y * dL_dG);
+			atomicAdd(&dL_dconic2D[global_id].x, dG_dconic_x * dL_dG);
+			atomicAdd(&dL_dconic2D[global_id].y, dG_dconic_y * dL_dG);
+			atomicAdd(&dL_dconic2D[global_id].w, dG_dconic_w * dL_dG);
 
 			// Update gradients w.r.t. opacity of the Gaussian
 			atomicAdd(&(dL_dopacity[global_id]), G * dL_dalpha);
@@ -729,7 +753,8 @@ void BACKWARD::render(
 	float4* dL_dconic2D,
 	float* dL_dopacity,
 	float* dL_dcolors,
-	float* dL_dinvdepths)
+	float* dL_dinvdepths,
+	int kernel_beta)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
 		ranges,
@@ -748,6 +773,7 @@ void BACKWARD::render(
 		dL_dconic2D,
 		dL_dopacity,
 		dL_dcolors,
-		dL_dinvdepths
+		dL_dinvdepths,
+		kernel_beta
 		);
 }

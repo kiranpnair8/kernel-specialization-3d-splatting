@@ -53,8 +53,11 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& campos,
 	const bool prefiltered,
 	const bool antialiasing,
+	const int kernel_beta,
 	const bool debug)
 {
+  TORCH_CHECK(kernel_beta == 1 || kernel_beta == 2 || kernel_beta == 4,
+    "kernel_beta must be one of 1, 2, or 4; got ", kernel_beta);
   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
     AT_ERROR("means3D must have dimensions (num_points, 3)");
   }
@@ -117,6 +120,7 @@ RasterizeGaussiansCUDA(
 		out_color.contiguous().data<float>(),
 		out_invdepthptr,
 		antialiasing,
+		kernel_beta,
 		radii.contiguous().data<int>(),
 		debug);
   }
@@ -148,8 +152,11 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& binningBuffer,
 	const torch::Tensor& imageBuffer,
 	const bool antialiasing,
+	const int kernel_beta,
 	const bool debug)
 {
+  TORCH_CHECK(kernel_beta == 1 || kernel_beta == 2 || kernel_beta == 4,
+    "kernel_beta must be one of 1, 2, or 4; got ", kernel_beta);
   const int P = means3D.size(0);
   const int H = dL_dout_color.size(1);
   const int W = dL_dout_color.size(2);
@@ -216,6 +223,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	  dL_dscales.contiguous().data<float>(),
 	  dL_drotations.contiguous().data<float>(),
 	  antialiasing,
+	  kernel_beta,
 	  debug);
   }
 

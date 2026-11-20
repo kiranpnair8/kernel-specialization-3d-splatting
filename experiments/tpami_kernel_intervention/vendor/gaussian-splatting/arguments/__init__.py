@@ -69,6 +69,9 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
+        # Fixed radial-kernel exponent for the controlled intervention.
+        # This is deliberately not trainable; beta=2 is the baseline Gaussian.
+        self.kernel_beta = 2
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):
